@@ -38,3 +38,4 @@ moveit/config/z1.urdf
 
 # we donot want papers to publish in Github
 *.pdf
+
