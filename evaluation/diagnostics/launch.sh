@@ -2,16 +2,18 @@
 # Run one T1 diagnostic in a uniquely named, read-only-repo Isaac container.
 #   launch.sh cpu|gpu <label> <timeout_s> <script-relative-to-repo> [args...]
 # Inside the container the run directory is /t1-run. Outcome -> <run>/host_result.json.
+# LAUNCH_TASK=t2 writes to logs/t2, names the container b2w-t2-diag-* and snapshots the T2 sources (default t1).
 # On timeout only this run's container is stopped and the outcome is "hang".
 set -uo pipefail
 MODE=$1; LABEL=$2; LIMIT=$3; SCRIPT=$4; shift 4
+TASK=${LAUNCH_TASK:-t1}
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 IMAGE_TAG=isaac-lab:2.3.2
 IMAGE_ID=$(docker image inspect "$IMAGE_TAG" --format '{{.Id}}') || { echo "missing image $IMAGE_TAG"; exit 2; }
 GPU_UUID=${ISAAC_GPU_UUID:-$(awk '/uuid:/{print $2; exit}' "$ROOT/config.yaml")}
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)-$(head -c4 /dev/urandom | od -An -tx1 | tr -d ' \n')
-RUN="$ROOT/repos/robot_lab/logs/t1/diag-$LABEL-$STAMP"
-NAME="b2w-t1-diag-$LABEL-$STAMP"
+RUN="$ROOT/repos/robot_lab/logs/$TASK/diag-$LABEL-$STAMP"
+NAME="b2w-$TASK-diag-$LABEL-$STAMP"
 mkdir -p "$RUN"/{artifacts,cache/{main,computecache,logs,config,data,pkg}}
 chmod -R 777 "$RUN"  # this new run directory only; the container runs as UID 1234
 CMD=(docker run --rm --name "$NAME" --shm-size=2g --stop-timeout 10 --entrypoint /isaac-sim/python.sh
@@ -39,8 +41,11 @@ printf '%s\n' "${CMD[@]}" > "$RUN/launch.txt"
 # Source snapshot of everything the run can import from this repo, plus manifest with hashes.
 TASK_DIR=training/robot_lab_overlay/source/robot_lab/robot_lab/tasks/manager_based/manipulation/standing_ee
 mkdir -p "$RUN/source"
+T2_FILES=()
+[ "$TASK" = t2 ] && T2_FILES=(training/robot_lab_overlay/source/robot_lab/robot_lab/tasks/manager_based/manipulation/reach_height/*.py
+  evaluation/reachability_t2.py tests/test_t2.py docs/protocols/T2_reach_low_high_protocol.md)
 ( cd "$ROOT" && printf '%s\n' "$SCRIPT" evaluation/diagnostics/*.py evaluation/diagnostics/launch.sh \
-    evaluation/eval_t1.py evaluation/diagnose_t1_standing.py $TASK_DIR/*.py tests/test_t1*.py docs/protocols/TASK_T1.md \
+    evaluation/eval_t1.py evaluation/diagnose_t1_standing.py $TASK_DIR/*.py tests/test_t1*.py docs/protocols/TASK_T1.md "${T2_FILES[@]}" \
   | sort -u | xargs cp --parents -t "$RUN/source/" )
 [ "$MODE" = gpu ] || GPU_UUID=none
 python3 - "$RUN" "$ROOT" "$SCRIPT" "$MODE" "$GPU_UUID" "$IMAGE_ID" "$IMAGE_TAG" "$NAME" <<'EOF'
@@ -56,11 +61,13 @@ json.dump(dict(script=script, mode=mode, container=name, gpu_uuid=gpu, image_tag
           open(f"{run}/manifest.json", "w"), indent=1)
 EOF
 START=$(date +%s.%N)
-timeout --signal=TERM "$LIMIT" "${CMD[@]}" > "$RUN/stdout.log" 2>&1
+# TERM at the limit, KILL 30 s later if the client is still alive (Isaac Sim can ignore TERM); exit 124 or 137.
+timeout --signal=TERM -k 30 "$LIMIT" "${CMD[@]}" > "$RUN/stdout.log" 2>&1
 CODE=$?
 chmod -R a+rX "$RUN/source"
 OUTCOME=exited
-if [ $CODE -eq 124 ]; then
+ELAPSED=$(echo "$(date +%s.%N) - $START" | bc)
+if [ $CODE -eq 124 ] || { [ $CODE -eq 137 ] && [ "$(echo "$ELAPSED >= $LIMIT" | bc)" -eq 1 ]; }; then
   OUTCOME=hang
   docker stop -t 5 "$NAME" > /dev/null 2>&1; docker rm -f "$NAME" > /dev/null 2>&1
 fi
