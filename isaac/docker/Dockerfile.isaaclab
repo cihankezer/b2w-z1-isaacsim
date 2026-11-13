@@ -52,11 +52,21 @@ WORKDIR /workspace/repos/IsaacLab
 # the script exits 0 having installed everything EXCEPT the core package. The
 # verification step below is what turns that into a build error instead of an
 # image that only breaks at runtime.
-RUN printf 'setuptools<81\n' > /tmp/pip-constraints.txt \
+# Isaac Sim 5.1 ships packaging 23.0. Replacing it removes prebundle files
+# symlinked by pip's vendored packaging, breaking every subsequent pip command.
+# pytest 9.2+ and wheel 0.46+ require packaging>=24, incompatible with this
+# Isaac Lab release's packaging<24 requirement. Constrain all install calls,
+# including their isolated build environments, before they can replace it.
+# https://github.com/isaac-sim/IsaacLab/issues/5351
+# robot_lab's unpinned pandas dependency otherwise upgrades NumPy to 2.x,
+# incompatible with Isaac Lab and the bundled numba/cmeel libraries.
+# Keep robot_lab's logging dependencies compatible with bundled SRL/aiobotocore.
+RUN printf 'setuptools<81\npackaging==23.0\npytest<9.2\nwheel<0.46\nnumpy==1.26.0\ndocstring-parser==0.16\nwrapt<2\n' > /tmp/pip-constraints.txt \
     && PIP_CONSTRAINT=/tmp/pip-constraints.txt ./isaaclab.sh --install rsl_rl
 
+# Isaac Lab pins starlette 0.49.1, outside the bundled FastAPI's supported range.
 RUN PIP_CONSTRAINT=/tmp/pip-constraints.txt \
-    /isaac-sim/python.sh -m pip install -e /workspace/repos/robot_lab/source/robot_lab
+    /isaac-sim/python.sh -m pip install -e /workspace/repos/robot_lab/source/robot_lab 'fastapi==0.121.3'
 
 # Verify by PACKAGE PRESENCE, not by importing. Importing isaaclab here would
 # fail on `No module named 'pxr'`: USD only resolves once Isaac Sim's app
@@ -70,6 +80,8 @@ RUN PIP_CONSTRAINT=/tmp/pip-constraints.txt \
 RUN /isaac-sim/python.sh -m pip show \
         isaaclab isaaclab_assets isaaclab_tasks isaaclab_rl \
         robot_lab rsl-rl-lib > /dev/null \
+    && /isaac-sim/python.sh -c \
+        'import pip._vendor.packaging.version; import packaging; import numpy; assert packaging.__version__ == "23.0", packaging.__version__; assert numpy.__version__ == "1.26.0", numpy.__version__' \
     && echo "VERIFY OK: all Isaac Lab + robot_lab packages installed"
 
 # Back to the image's own user, and make the tree writable by it so a runtime

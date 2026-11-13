@@ -35,3 +35,6 @@ __pycache__/
 
 # ---- MoveIt: made by moveit/make_config.py from the robot assets
 moveit/config/z1.urdf
+
+# we donot want papers to publish in Github
+*.pdf
