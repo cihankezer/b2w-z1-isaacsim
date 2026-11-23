@@ -44,6 +44,11 @@ mkdir -p "$RUN/source"
 T2_FILES=()
 [ "$TASK" = t2 ] && T2_FILES=(training/robot_lab_overlay/source/robot_lab/robot_lab/tasks/manager_based/manipulation/reach_height/*.py
   evaluation/reachability_t2.py tests/test_t2.py docs/protocols/T2_reach_low_high_protocol.md)
+[ "$TASK" = t3 ] && T2_FILES=(training/robot_lab_overlay/source/robot_lab/robot_lab/tasks/manager_based/manipulation/reach_height/*.py
+  training/robot_lab_overlay/source/robot_lab/robot_lab/tasks/manager_based/manipulation/walk_reach/*.py
+  training/robot_lab_overlay/source/robot_lab/robot_lab/tasks/manager_based/manipulation/walk_reach/data/*
+  evaluation/measure_t3.py evaluation/build_t3_pool.py evaluation/build_t3_eval_set.py tests/test_t3.py
+  docs/protocols/T3_walk_and_reach_protocol.md)
 ( cd "$ROOT" && printf '%s\n' "$SCRIPT" evaluation/diagnostics/*.py evaluation/diagnostics/launch.sh \
     evaluation/eval_t1.py evaluation/diagnose_t1_standing.py $TASK_DIR/*.py tests/test_t1*.py docs/protocols/TASK_T1.md "${T2_FILES[@]}" \
   | sort -u | xargs cp --parents -t "$RUN/source/" )

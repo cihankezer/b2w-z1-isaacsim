@@ -1,0 +1,29 @@
+{
+ "root": "repos/robot_lab/logs/t3",
+ "note": "Run artifacts live outside git (repos/ is ignored). digest_sha256 = array digest pinned in walk_reach/protocol.py where applicable.",
+ "artifacts": {
+  "train_pool_v03": {
+   "path": "diag-pool-train-20261123T122622Z-0b82b3db/artifacts/t3_pool_train.npz",
+   "size_bytes": 397614,
+   "file_sha256": "c57e97bb244071b47458d6566042de9fb512a854846aa31eb8947af7a1c3645f",
+   "digest_sha256": "93529dbdbf3c97e640d9a0e1aa5d3cb8c00f624bb1ae7ec6aef037f578c61da5"
+  },
+  "eval_pool_v03": {
+   "path": "diag-pool-eval-20261123T122627Z-762eb62d/artifacts/t3_pool_eval.npz",
+   "size_bytes": 71227,
+   "file_sha256": "f1bd35c776c054a8de12371197f1e74031dc6e7426e811c9934ea2d29f0cc896",
+   "digest_sha256": "58742edddd9b0a8718ff065c61ef1bb6f9a447cc6f0d186e767de44bb583b5ee"
+  },
+  "eval_set_v03": {
+   "path": "diag-eval-set-20261123T123507Z-ea4e9782/artifacts/t3_eval_set_v3.npz",
+   "size_bytes": 99625,
+   "file_sha256": "8ddf9240d3010fa0afb0e8b56fb18ebce5381eeccbed293206c508a2d4b2e373",
+   "digest_sha256": "77d5bd4e0091d3c4f9916971e249f9987c2da064231eabbbe013dd6bb36054d7"
+  },
+  "measurements_run": {
+   "path": "diag-measure-20261123T121813Z-2df42c5d/artifacts/t3_measurements.json",
+   "size_bytes": 17929,
+   "file_sha256": "7952d3b15f5be05c1f1014231f25bb7834415fe010fc85085780ce4201d1159b"
+  }
+ }
+}

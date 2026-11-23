@@ -1,0 +1,929 @@
+{
+ "protocol": "T3 v0.3 Section 10",
+ "asset": "robots_usd/b2w_z1_gripper.usd",
+ "asset_hashes": {
+  "README.md": "2253af286454fccab2448bb56272a9d18626715c5989cff77c31b54629f07040",
+  "RealSense/LICENSE_realsense-ros": "7092398b52290edddcb41c6e2297f4c6343eb315ea6c83edfdbeea2a73adfbdb",
+  "RealSense/_d405.urdf.xacro": "81118e87388c06e4cf1b3dc8b114096de21c1b235bd283dafad84d2bd97aebb1",
+  "RealSense/d405.stl": "a248f41149d12b28311829feecbe7a80cf1481fd05e0f5df2c4c7ecd556edd48",
+  "RealSense/d405.usd": "bca540720d35073b8d47447ecc9d7fe87f66af6aed7f3200798274ccc7ef3ae3",
+  "RealSense/rsd455.usd": "0546588c4c33e54975ddb1ef5bb9924c75948e1f6da81e249ca844874f2ca0e1",
+  "Unitree_B2/b2_description/b2_description.usd": "fa945a17a8305be34d2ac19a1ff9d869010a95625fadec39e70dcb861e15fdb2",
+  "Unitree_B2/b2_description/configuration/b2_description_base.usd": "428e1cd6cbd8de46f6f06a88e66eaeaf5aac78d9c4a92631dd8d9015be0fa90c",
+  "Unitree_B2/b2_description/configuration/b2_description_physics.usd": "f50ff1a8ec7371f6adf26048634678051845dba1a751e84a0156b3a64d1c2a9e",
+  "Unitree_B2/b2_description/configuration/b2_description_robot.usd": "a08c51b57fc16ec8c0fe139d337081b8c7126378613d0dd9feb4f33a14617baa",
+  "Unitree_B2/b2_description/configuration/b2_description_sensor.usd": "e802bb5f912da593d2bf3d3d76bed237abd8c92ebebec37f1fa0edce57b66aa3",
+  "Unitree_B2W/b2w_description.usd": "e2ccf8fceef98feb3d9edfd947bc404f599d6099d1b8b54ed158523524ba7eea",
+  "Unitree_B2W/configuration/b2w_description_base.usd": "acac1967e9c5031555f3bcc270e651184717123038cef9699fb29ee7184d97f4",
+  "Unitree_B2W/configuration/b2w_description_physics.usd": "6fb7a34c14e54b59d59ab5273d2626d23df1b20c974ea79948376eb4fc1dbf09",
+  "Unitree_B2W/configuration/b2w_description_robot.usd": "632e56200ceafbf24ae442da61d1202cf6d60eed2a5908c54d30f20e9af32a37",
+  "Unitree_B2W/configuration/b2w_description_sensor.usd": "2165af7e431d7998299e89e63e805aee86929289da40837284f8fe65845f7993",
+  "Unitree_B2W_rl/b2w_description.usd": "e2ccf8fceef98feb3d9edfd947bc404f599d6099d1b8b54ed158523524ba7eea",
+  "Unitree_B2W_rl/configuration/b2w_description_base.usd": "0f7c9d8e463ecc5d3ff684a3b9bf70529739c58c9821e10ac6c435358df6656c",
+  "Unitree_B2W_rl/configuration/b2w_description_physics.usd": "523ca5a73f5fdf44f2b104f686f1be73cc1f3f159523e1bd1cb9cb793e9e46b7",
+  "Unitree_B2W_rl/configuration/b2w_description_robot.usd": "632e56200ceafbf24ae442da61d1202cf6d60eed2a5908c54d30f20e9af32a37",
+  "Unitree_B2W_rl/configuration/b2w_description_sensor.usd": "2165af7e431d7998299e89e63e805aee86929289da40837284f8fe65845f7993",
+  "Unitree_Z1/configuration/z1_base.usd": "a7dde2119bdd756736300578131b217b2af253e1815f8fbc1506c2ccb530c61a",
+  "Unitree_Z1/configuration/z1_physics.usd": "ce9ced25536878c1bc0e2583966c94d028c7ae870e005f2e1fb3e667cedd6ef5",
+  "Unitree_Z1/configuration/z1_robot.usd": "9d96f59a045919e6dbe2fd529a7a4afe8ea1c5db5d0dbffc548f81464872be41",
+  "Unitree_Z1/configuration/z1_sensor.usd": "c146c508b34787bb75b6f3af2761cb3ebc51e4ca40f2ad4fea59acae62700d08",
+  "Unitree_Z1/z1.usd": "da1f93679c852cb892cec203921b57fa2360e3000e5a5a2ff915677a16288afd",
+  "Unitree_Z1_gripper/configuration/z1_gripper_base.usd": "e3ce1af6d2ca7eab054fdefe10d235f6debafad434b073b98f0a3b9ade26a596",
+  "Unitree_Z1_gripper/configuration/z1_gripper_physics.usd": "b91fa71cc4321453d449747e97241774e4fe95c979f51219c5a6fc639c5f1acd",
+  "Unitree_Z1_gripper/configuration/z1_gripper_robot.usd": "e77170fe9461c039d9985f21a271c02409b24285f622d0ad08357f8c35ad492f",
+  "Unitree_Z1_gripper/configuration/z1_gripper_sensor.usd": "c146c508b34787bb75b6f3af2761cb3ebc51e4ca40f2ad4fea59acae62700d08",
+  "Unitree_Z1_gripper/z1_gripper.usd": "e96e15b3ebe93a4a5a3612f61e3d5de84403df18e606be7375956c35ef053d10",
+  "b2_z1.usd": "553aef7eacdfbce33606e667c05312ba9a988fc8eac8674f994527bfeec19296",
+  "b2_z1_in_warehouse.usd": "d49461ef9b037cb41ebe4bf37ac903f7cc2c6d310744c9efdadbe8de906d6dc0",
+  "b2w_in_warehouse.usd": "d81369dce3614372653b9fe6923f0d86a918346032a5597112f32c78e8167665",
+  "b2w_on_ground.usd": "fe45ac62d7aef6208eb5b702019fd0876bb42d7b4b3e4616e8cb421bc0773f86",
+  "b2w_z1.usd": "1fb21a0fddfa760147910aaa0587f870a928ea88ff3ed295f0374bfa74aae417",
+  "b2w_z1_gripper.usd": "b73a04f1f97f9698b970fd9b25c1b729d43c0f3037d696970fcc30fe333ce39c",
+  "b2w_z1_gripper_on_ground.usd": "a2722f54bab853aaf76dea97763099d764d2841594628fb095bc43c97bbd82c8",
+  "b2w_z1_in_warehouse.usd": "c4bf86b31d737ed86b3d108c0bc0d0ffcf5ba28a9190a178220286f77189d0be",
+  "b2w_z1_rl.usd": "89a3adaf7a54387e60227b2ed34cdab5a41536af4dabce4c9fc0e2ea1e7b35f0",
+  "b2w_z1_rl_on_ground.usd": "77d2656f99c3ba4ce0abe87618424170dffdf21b891f932415c68e759375994c",
+  "z1_gripper_description/meshes/z1_GripperMover.dae": "22070433a988290de089b572483e0e080bd48aed42ed978ed3d0e17a0a90b12d",
+  "z1_gripper_description/meshes/z1_GripperStator.dae": "86bea214534cc45b432198f6b1db90713563406cc2f7545fac74f64edcdac0fc",
+  "z1_gripper_description/meshes/z1_Link00.dae": "df276eb556db351f8136d25a023347021fe5e1ff61ecde87f84d18da440073ff",
+  "z1_gripper_description/meshes/z1_Link01.dae": "c3838b573d4881a046b56b561bb0bcead15e28eddcec891f4df7d2dabe5fc7dc",
+  "z1_gripper_description/meshes/z1_Link02.dae": "fcc86e640824d447f393b60751fc4d5391490d76074c2feffc7cce02d7dcce12",
+  "z1_gripper_description/meshes/z1_Link03.dae": "d28522a8eb04cf19dcd997e3c06e8d1f490bb61416a5609fb4ec8ec0e98de5b8",
+  "z1_gripper_description/meshes/z1_Link04.dae": "b785d8dcb7e618b70c92356189c355143152e7cf3ccfdb21cdc055ab55693ba7",
+  "z1_gripper_description/meshes/z1_Link05.dae": "23174b5a0cb554a8d18248fda1064f2ae7fbcab03af03d70f6d7edb221a423b1",
+  "z1_gripper_description/meshes/z1_Link06.dae": "a71e4bb0a1e85dbc0f712e3581333f49526a9e3e30dc272b1839a0a696aa4cf0",
+  "z1_gripper_description/package.xml": "f64cf9781e3ae216ccdfffe2e1fda41e0c3f5010459392cd25aff905370a7183",
+  "z1_gripper_description/urdf/z1.urdf": "004289c58f3953ee65e89a8fadb02d3c94b2caa639852684f56de0beed6a8dc9",
+  "z1_gripper_description/urdf/z1_gripper.urdf": "847183f9e67a7ed9185512e443b76dd9d0f150e425bf057b84eaeae20c98b56d",
+  "z1_gripper_description/urdf/z1_gripper_local.urdf": "02b9e16584e6fac985848e739cd20ab55dbfd0acc6c0e0b9ea2189a1d2ad341f"
+ },
+ "asset_tree_sha256": "4e55713b49b42d37347ed31ce407f92571c08bdb9a72f785a7e75fa1cce1f1b4",
+ "t2_map": {
+  "path": "/workspace/repos/robot_lab/logs/t2/diag-reach-A1-v04r3-20261113T084127Z-1d029cc2/artifacts/reachability_T2_protocol.npz",
+  "sha256": "22b9e665baa11bced9832107ca17c154ba57751fb55f54c3dbf67d9e1b865404"
+ },
+ "method": "FK at the T1 nominal state (settled 30 s standing sim, T1 draft.5); terrain z = 0",
+ "h_nom": 0.6038742661476135,
+ "h_T": 0.6909795052252214,
+ "F_T_yaw_rad": -0.026034539632627418,
+ "p_home_T": {
+  "position": [
+   0.3488942722938709,
+   0.008822927367421676,
+   0.5168077056320922
+  ],
+  "quaternion_wxyz": [
+   0.9999733256954425,
+   -0.0073037896403311976,
+   5.054057846905196e-05,
+   3.691476001953095e-07
+  ]
+ },
+ "nominal_tcp_height_m": 1.2077872108573136,
+ "b_nom": {
+  "dh": 0.0,
+  "pitch": 0.00010108385319340663,
+  "roll": -0.014607709176826236,
+  "rebuild_error": 1.1102230246251565e-16
+ },
+ "B_body_T": {
+  "min": [
+   -0.7199497667955532,
+   -0.3389766806418928,
+   -0.7916851421175858
+  ],
+  "max": [
+   0.5384107433878009,
+   0.33894970198937613,
+   0.20895187855705405
+  ],
+  "margin_m": 0.05,
+  "bodies": [
+   "FL_calf",
+   "FL_foot",
+   "FL_hip",
+   "FL_thigh",
+   "FR_calf",
+   "FR_foot",
+   "FR_hip",
+   "FR_thigh",
+   "RL_calf",
+   "RL_foot",
+   "RL_hip",
+   "RL_thigh",
+   "RR_calf",
+   "RR_foot",
+   "RR_hip",
+   "RR_thigh",
+   "base_link",
+   "head_Link",
+   "lidar_link",
+   "tail_link"
+  ]
+ },
+ "wheels": {
+  "order": [
+   "FR",
+   "FL",
+   "RR",
+   "RL"
+  ],
+  "centre_T": [
+   [
+    0.3056122033500257,
+    -0.19335643623722712,
+    -0.5828790086930108
+   ],
+   [
+    0.3356643978497757,
+    0.19123216007054777,
+    -0.5834355123425187
+   ],
+   [
+    -0.3506553768229722,
+    -0.2074871124075508,
+    -0.5840500595268373
+   ],
+   [
+    -0.32095332121567777,
+    0.1772166090464025,
+    -0.5820744122928319
+   ]
+  ],
+  "contact_T": [
+   [
+    0.3056122033500257,
+    -0.19335643623722712,
+    -0.6909795052252214
+   ],
+   [
+    0.3356643978497757,
+    0.19123216007054777,
+    -0.6909795052252214
+   ],
+   [
+    -0.3506553768229722,
+    -0.2074871124075508,
+    -0.6909795052252214
+   ],
+   [
+    -0.32095332121567777,
+    0.1772166090464025,
+    -0.6909795052252214
+   ]
+  ],
+  "centre_body": [
+   [
+    0.3056623165115209,
+    -0.1860943967086564,
+    -0.49851437761406336
+   ],
+   [
+    0.3357145671112682,
+    0.19846125215848218,
+    -0.49345002584790926
+   ],
+   [
+    -0.35060514193429343,
+    -0.20020549049332143,
+    -0.4999580439466532
+   ],
+   [
+    -0.32090328618478053,
+    0.18442828414617063,
+    -0.4923601652016032
+   ]
+  ],
+  "radius_m": [
+   0.10810049653221071,
+   0.10754399288270283,
+   0.10692944569838425,
+   0.1089050929323897
+  ]
+ },
+ "knees": {
+  "order": [
+   "FR",
+   "FL",
+   "RR",
+   "RL"
+  ],
+  "height_m": [
+   0.36791057855919335,
+   0.3515391183196479,
+   0.3684529745251488,
+   0.3502917744621064
+  ],
+  "h_knee": 0.3684529745251488
+ },
+ "feasibility": {
+  "dh_axis": [
+   -0.32,
+   -0.3,
+   -0.28,
+   -0.26,
+   -0.24,
+   -0.22,
+   -0.2,
+   -0.18,
+   -0.16,
+   -0.14,
+   -0.12,
+   -0.1,
+   -0.08,
+   -0.06,
+   -0.04,
+   -0.02,
+   -0.0
+  ],
+  "pitch_axis": [
+   -0.28,
+   -0.24,
+   -0.2,
+   -0.16,
+   -0.12,
+   -0.08,
+   -0.04,
+   0.0,
+   0.04,
+   0.08,
+   0.12,
+   0.16,
+   0.2,
+   0.24,
+   0.28
+  ],
+  "feasible": [
+   [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    1,
+    1,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   [
+    0,
+    0,
+    0,
+    0,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    0,
+    0,
+    0
+   ],
+   [
+    0,
+    0,
+    0,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    0,
+    0
+   ],
+   [
+    0,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+   ],
+   [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+   ],
+   [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+   ],
+   [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+   ],
+   [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+   ],
+   [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+   ],
+   [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+   ],
+   [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+   ],
+   [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+   ],
+   [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+   ],
+   [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+   ]
+  ],
+  "n_feasible": 188,
+  "n_total": 255,
+  "infeasible_reasons": [
+   "clearance_violation",
+   "leg_ik",
+   "penetration"
+  ]
+ },
+ "link00_T_over_offsets": [
+  {
+   "dh": -0.32,
+   "pitch": -0.28,
+   "link00_position_T": [
+    0.0300507943689947,
+    1.9301238801350222e-18,
+    -0.30781342876213397
+   ]
+  },
+  {
+   "dh": -0.32,
+   "pitch": -0.2,
+   "link00_position_T": [
+    0.03788955773776932,
+    1.854559128183062e-18,
+    -0.31053249316879616
+   ]
+  },
+  {
+   "dh": -0.32,
+   "pitch": -0.12,
+   "link00_position_T": [
+    0.04548595723912545,
+    1.9301238801350226e-18,
+    -0.3138692935846162
+   ]
+  },
+  {
+   "dh": -0.32,
+   "pitch": -0.04,
+   "link00_position_T": [
+    0.05279140183976712,
+    1.7347234759768075e-18,
+    -0.31780248587411536
+   ]
+  },
+  {
+   "dh": -0.32,
+   "pitch": 0.04,
+   "link00_position_T": [
+    0.059759161624848775,
+    1.7347234759768075e-18,
+    -0.32230691102907344
+   ]
+  },
+  {
+   "dh": -0.32,
+   "pitch": 0.12,
+   "link00_position_T": [
+    0.06634466670995944,
+    1.9301238801350226e-18,
+    -0.3273537561003236
+   ]
+  },
+  {
+   "dh": -0.32,
+   "pitch": 0.2,
+   "link00_position_T": [
+    0.07250579233628353,
+    2.005688632086983e-18,
+    -0.33291073850229974
+   ]
+  },
+  {
+   "dh": -0.32,
+   "pitch": 0.28,
+   "link00_position_T": [
+    0.07820312832530216,
+    1.9301238801350222e-18,
+    -0.33894231251141654
+   ]
+  },
+  {
+   "dh": -0.24,
+   "pitch": -0.28,
+   "link00_position_T": [
+    0.0300507943689947,
+    1.9301238801350222e-18,
+    -0.22781342876213395
+   ]
+  },
+  {
+   "dh": -0.24,
+   "pitch": -0.2,
+   "link00_position_T": [
+    0.03788955773776932,
+    1.854559128183062e-18,
+    -0.23053249316879615
+   ]
+  },
+  {
+   "dh": -0.24,
+   "pitch": -0.12,
+   "link00_position_T": [
+    0.04548595723912545,
+    1.9301238801350226e-18,
+    -0.23386929358461617
+   ]
+  },
+  {
+   "dh": -0.24,
+   "pitch": -0.04,
+   "link00_position_T": [
+    0.05279140183976712,
+    1.7347234759768075e-18,
+    -0.23780248587411534
+   ]
+  },
+  {
+   "dh": -0.24,
+   "pitch": 0.04,
+   "link00_position_T": [
+    0.059759161624848775,
+    1.7347234759768075e-18,
+    -0.24230691102907342
+   ]
+  },
+  {
+   "dh": -0.24,
+   "pitch": 0.12,
+   "link00_position_T": [
+    0.06634466670995944,
+    1.9301238801350226e-18,
+    -0.24735375610032356
+   ]
+  },
+  {
+   "dh": -0.24,
+   "pitch": 0.2,
+   "link00_position_T": [
+    0.07250579233628353,
+    2.005688632086983e-18,
+    -0.2529107385022997
+   ]
+  },
+  {
+   "dh": -0.24,
+   "pitch": 0.28,
+   "link00_position_T": [
+    0.07820312832530216,
+    1.9301238801350222e-18,
+    -0.25894231251141653
+   ]
+  },
+  {
+   "dh": -0.16,
+   "pitch": -0.28,
+   "link00_position_T": [
+    0.0300507943689947,
+    1.9301238801350222e-18,
+    -0.14781342876213394
+   ]
+  },
+  {
+   "dh": -0.16,
+   "pitch": -0.2,
+   "link00_position_T": [
+    0.03788955773776932,
+    1.854559128183062e-18,
+    -0.15053249316879613
+   ]
+  },
+  {
+   "dh": -0.16,
+   "pitch": -0.12,
+   "link00_position_T": [
+    0.04548595723912545,
+    1.9301238801350226e-18,
+    -0.15386929358461615
+   ]
+  },
+  {
+   "dh": -0.16,
+   "pitch": -0.04,
+   "link00_position_T": [
+    0.05279140183976712,
+    1.7347234759768075e-18,
+    -0.15780248587411533
+   ]
+  },
+  {
+   "dh": -0.16,
+   "pitch": 0.04,
+   "link00_position_T": [
+    0.059759161624848775,
+    1.7347234759768075e-18,
+    -0.1623069110290734
+   ]
+  },
+  {
+   "dh": -0.16,
+   "pitch": 0.12,
+   "link00_position_T": [
+    0.06634466670995944,
+    1.9301238801350226e-18,
+    -0.16735375610032355
+   ]
+  },
+  {
+   "dh": -0.16,
+   "pitch": 0.2,
+   "link00_position_T": [
+    0.07250579233628353,
+    2.005688632086983e-18,
+    -0.1729107385022997
+   ]
+  },
+  {
+   "dh": -0.16,
+   "pitch": 0.28,
+   "link00_position_T": [
+    0.07820312832530216,
+    1.9301238801350222e-18,
+    -0.1789423125114165
+   ]
+  },
+  {
+   "dh": -0.08,
+   "pitch": -0.28,
+   "link00_position_T": [
+    0.0300507943689947,
+    1.9301238801350222e-18,
+    -0.06781342876213385
+   ]
+  },
+  {
+   "dh": -0.08,
+   "pitch": -0.2,
+   "link00_position_T": [
+    0.03788955773776932,
+    1.854559128183062e-18,
+    -0.07053249316879608
+   ]
+  },
+  {
+   "dh": -0.08,
+   "pitch": -0.12,
+   "link00_position_T": [
+    0.04548595723912545,
+    1.9301238801350226e-18,
+    -0.0738692935846161
+   ]
+  },
+  {
+   "dh": -0.08,
+   "pitch": -0.04,
+   "link00_position_T": [
+    0.05279140183976712,
+    1.7347234759768075e-18,
+    -0.07780248587411524
+   ]
+  },
+  {
+   "dh": -0.08,
+   "pitch": 0.04,
+   "link00_position_T": [
+    0.059759161624848775,
+    1.7347234759768075e-18,
+    -0.08230691102907332
+   ]
+  },
+  {
+   "dh": -0.08,
+   "pitch": 0.12,
+   "link00_position_T": [
+    0.06634466670995944,
+    1.9301238801350226e-18,
+    -0.08735375610032346
+   ]
+  },
+  {
+   "dh": -0.08,
+   "pitch": 0.2,
+   "link00_position_T": [
+    0.07250579233628353,
+    2.005688632086983e-18,
+    -0.09291073850229965
+   ]
+  },
+  {
+   "dh": -0.08,
+   "pitch": 0.28,
+   "link00_position_T": [
+    0.07820312832530216,
+    1.9301238801350222e-18,
+    -0.09894231251141646
+   ]
+  },
+  {
+   "dh": -0.0,
+   "pitch": -0.28,
+   "link00_position_T": [
+    0.0300507943689947,
+    1.9301238801350222e-18,
+    0.012186571237866109
+   ]
+  },
+  {
+   "dh": -0.0,
+   "pitch": -0.2,
+   "link00_position_T": [
+    0.03788955773776932,
+    1.854559128183062e-18,
+    0.009467506831203884
+   ]
+  },
+  {
+   "dh": -0.0,
+   "pitch": -0.12,
+   "link00_position_T": [
+    0.04548595723912545,
+    1.9301238801350226e-18,
+    0.006130706415383866
+   ]
+  },
+  {
+   "dh": -0.0,
+   "pitch": -0.04,
+   "link00_position_T": [
+    0.05279140183976712,
+    1.7347234759768075e-18,
+    0.002197514125884717
+   ]
+  },
+  {
+   "dh": -0.0,
+   "pitch": 0.04,
+   "link00_position_T": [
+    0.059759161624848775,
+    1.7347234759768075e-18,
+    -0.0023069110290733635
+   ]
+  },
+  {
+   "dh": -0.0,
+   "pitch": 0.12,
+   "link00_position_T": [
+    0.06634466670995944,
+    1.9301238801350226e-18,
+    -0.0073537561003235025
+   ]
+  },
+  {
+   "dh": -0.0,
+   "pitch": 0.2,
+   "link00_position_T": [
+    0.07250579233628353,
+    2.005688632086983e-18,
+    -0.012910738502299693
+   ]
+  },
+  {
+   "dh": -0.0,
+   "pitch": 0.28,
+   "link00_position_T": [
+    0.07820312832530216,
+    1.9301238801350222e-18,
+    -0.018942312511416495
+   ]
+  }
+ ],
+ "fk_chain_check_max_abs": 2.220446049250313e-16,
+ "clearance_timing": {
+  "samples": 40,
+  "mean_s": 0.0452049926010659,
+  "p95_s": 0.11828056573867783,
+  "outcomes": {
+   "ok": 23,
+   "clearance_violation": 7,
+   "penetration": 7,
+   "leg_ik": 3
+  }
+ }
+}
