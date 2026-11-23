@@ -38,7 +38,7 @@ def fixed():
 
 
 def sampled_set():
-    result = dict(protocol_version=p.VERSION, robot_variant="B2W", end_effector_frame="link06", seed=1101, settle_s=2.0,
+    result = dict(protocol_version=p.VERSION, robot_variant="B2W", **p.TARGET_FRAME, seed=1101, settle_s=2.0,
                   sampler=p.SAMPLER, counts={"fixed": 3, "circle": 2}, targets=[])
     result["targets"] = [dict(fixed(), target_id=f"fixed-{i:02d}") for i in range(3)]
     result["targets"] += [dict(circle(), target_id=f"circle-{i:02d}-XY") for i in range(2)]
@@ -281,8 +281,33 @@ def test_sampler_is_seeded_counted_and_uses_soft_limits():
     assert all(t["hold_s"] == 5.0 and t["steady_state_last_s"] == 2.0 for t in one["targets"][:4])
     circle_target = one["targets"][4]
     q = circle_target["joint_space_sample_rad"]
-    np.testing.assert_allclose(circle_target["centre_world_xyz"],
-                               np.add(p.NOMINAL_BASE_POSITION_XYZ, [0.1*q[0], 0.1*q[1], 1.0+0.1*q[2]]), atol=1e-12)
+    base_rotation = g.transform(p.NOMINAL_BASE_POSITION_XYZ, p.NOMINAL_BASE_QUAT_WXYZ)[:3, :3]
+    np.testing.assert_allclose(circle_target["centre_world_xyz"],          # TCP = link06 + R @ offset (2.0.0)
+                               np.add(p.NOMINAL_BASE_POSITION_XYZ, [0.1*q[0], 0.1*q[1], 1.0+0.1*q[2]])
+                               + base_rotation @ p.TCP_OFFSET_M, atol=1e-12)
+    assert one["ee_frame"] == "tcp" and one["tcp_offset_m"] == [0.171, 0.0, 0.0]
+
+
+def test_tcp_reference_is_rigid_map_of_flange_reference():
+    """T1 2.0.0 (T3 D33): TCP reference = link06 reference x offset at every instant; the quaternion of a
+    mapped target is kept bit-for-bit; |e_pos_tcp - e_pos_flange| <= 0.171 * theta for any actual pose."""
+    settled_l6 = g.transform([0.4, -0.1, 0.6], quaternion([1, 0, 0], 0.4))
+    target_l6 = dict(circle(), quaternion_world_wxyz=list(quaternion([0, 1, 1] / np.sqrt(2), 0.7)))
+    target_tcp = g.map_target(target_l6, p.TCP)
+    assert target_tcp["quaternion_world_wxyz"] == target_l6["quaternion_world_wxyz"]
+    back = g.map_target(target_tcp, p.TCP_INV)
+    np.testing.assert_allclose(back["centre_world_xyz"], target_l6["centre_world_xyz"], atol=1e-15)
+    rng = np.random.default_rng(0)
+    for t in np.r_[1.0, np.linspace(2.0, 44.0, 211)]:
+        ref_l6 = g.reference(target_l6, t, settled_l6)
+        ref_tcp = g.tcp_reference(target_tcp, t, settled_l6 @ p.TCP, p.TCP, p.TCP_INV)
+        assert ref_tcp[1:] == ref_l6[1:]
+        np.testing.assert_allclose(ref_tcp[0], ref_l6[0] @ p.TCP, atol=1e-14)
+        actual_l6 = g.transform(ref_l6[0][:3, 3] + rng.normal(0, 0.05, 3), quaternion(rng.normal(size=3), rng.uniform(0, 1)))
+        e_l6 = g.pose_error(actual_l6, ref_l6[0])
+        e_tcp = g.pose_error(actual_l6 @ p.TCP, ref_tcp[0])
+        assert e_tcp[1] == pytest.approx(e_l6[1], abs=1e-12)
+        assert abs(e_tcp[0] - e_l6[0]) <= 0.171 * e_l6[1] + 1e-9
 
 
 def test_sampler_records_filter_rejections_and_caps_attempts(monkeypatch):

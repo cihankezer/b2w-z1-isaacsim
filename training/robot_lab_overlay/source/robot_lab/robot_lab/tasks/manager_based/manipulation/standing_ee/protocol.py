@@ -8,8 +8,16 @@ import numpy as np
 
 from .geometry import circle, transform
 
-VERSION = "1.0.0"   # protocol 1.0.0 (2026-11-12): draft.7 + oracle controller, fast shutdown, metrics_export completeness
+VERSION = "2.0.0"   # 2.0.0 (2026-11-23): TCP end-effector frame, shared termination set, wheel channel (T3 D19, D20, D22, D33)
+# 1.0.0 (2026-11-12): draft.7 + oracle controller, fast shutdown, metrics_export completeness
 TASK_ID = "RobotLab-Isaac-T1-Standing-Unitree-B2W-Z1-v0"
+# End-effector frame (2.0.0, T3 D19/D33): the TCP, a rigid translation of the link06 flange. Targets, references,
+# observations and errors use the TCP; sampling filters, IK audits and the oracle joint paths stay on link06.
+TCP_PARENT = "link06"
+TCP_OFFSET_M = (0.171, 0.0, 0.0)
+TCP = transform(TCP_OFFSET_M, (1.0, 0.0, 0.0, 0.0))
+TCP_INV = transform(tuple(-x for x in TCP_OFFSET_M), (1.0, 0.0, 0.0, 0.0))   # exact inverse (identity rotation)
+TARGET_FRAME = dict(end_effector_frame="tcp", ee_frame="tcp", tcp_parent=TCP_PARENT, tcp_offset_m=list(TCP_OFFSET_M))
 # Clearance policy (draft.5; draft.7 adds the approx_hull geometry for uncookable mesh colliders).
 CLEARANCE_POLICY = {
     "threshold_m": 0.005,
@@ -53,8 +61,9 @@ SAMPLER = {
     "fixed": {"hold_s": 5.0, "steady_state_last_s": 2.0, "ik": False},
     "circle": {"radius_m": 0.1, "frequency_hz": 0.05, "transition_s": 2.0, "duration_s": 40.0,
                "steady_state_start_s": 20.0, "planes": ["XY", "XZ", "YZ"], "plane_assignment": "index mod 3",
-               "centre": "link06 position of a joint-space sample",
-               "orientation": "constant; link06 orientation of that joint-space sample (circle start)",
+               "centre": "TCP position of a joint-space sample (link06 pose x TCP offset)",
+               "orientation": "constant; TCP (= link06) orientation of that joint-space sample (circle start)",
+               "reference": "rigid map: TCP reference = link06 reference (quintic + slerp transition) x TCP offset",
                "audit": "6D IK + clearance filters at 10 Hz over transition and circle; branch jump <= 0.25 rad/0.1 s"},
     "max_attempts_per_target": 400,
 }
@@ -76,8 +85,8 @@ def validate_targets(data):
     """A sampled target set: sampler frozen by the protocol, targets drawn from data['seed']."""
     if data.get("protocol_version") != VERSION or data.get("robot_variant") != "B2W":
         raise ValueError("Target set must match this B2W protocol version")
-    if data.get("end_effector_frame") != "link06" or data.get("settle_s") != 2.0:
-        raise ValueError("Unexpected TCP or settling period")
+    if any(data.get(k) != v for k, v in TARGET_FRAME.items()) or data.get("settle_s") != 2.0:
+        raise ValueError("Unexpected end-effector frame (TCP) or settling period")
     if data.get("sampler") != SAMPLER or not isinstance(data.get("seed"), int):
         raise ValueError("Sampler definition or seed differs from the protocol")
     targets = data["targets"]

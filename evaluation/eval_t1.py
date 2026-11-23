@@ -228,7 +228,7 @@ def main():
             except importlib.metadata.PackageNotFoundError:
                 versions[name] = None
         metadata = dict(protocol_version=protocol.VERSION, run_id=args.out.name, task_id=protocol.TASK_ID,
-            robot_variant="B2W", end_effector_frame="link06", mode=args.mode, controller=args.controller,
+            robot_variant="B2W", end_effector_frame="tcp", mode=args.mode, controller=args.controller,
             seed=cfg.seed, seeds=seeds if evaluate else [cfg.seed], seed_role="target sampling only; initial state deterministic",
             sampler=protocol.SAMPLER, target_counts=counts,
             protocol_counts=(counts["fixed_count"], counts["circle_count"]) == (protocol.SAMPLER["fixed_count"], protocol.SAMPLER["circle_count"]),
@@ -335,7 +335,9 @@ def main():
                             desired_q = torch.as_tensor(oracle_arm_q(target, t, nominal_q, geometry.quintic),
                                                         device=env.device, dtype=torch.float32)
                         else:
-                            desired = torch.as_tensor(geometry.pose(command.evaluate(i)[0]), device=env.device, dtype=torch.float32)
+                            # DLS-IK acts on the link06 body: map the TCP reference back to the flange (2.0.0).
+                            desired = torch.as_tensor(geometry.pose(command.evaluate(i)[0] @ protocol.TCP_INV),
+                                                      device=env.device, dtype=torch.float32)
                             d = robot.data
                             dp, dr = mu.compute_pose_error(d.body_pos_w[i:i+1, command.hand], d.body_quat_w[i:i+1, command.hand],
                                                            desired[None, :3], desired[None, 3:], rot_error_type="axis_angle")

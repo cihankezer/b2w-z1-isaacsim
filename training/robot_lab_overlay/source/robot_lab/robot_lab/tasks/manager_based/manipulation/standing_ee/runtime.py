@@ -6,9 +6,10 @@ import torch
 from isaaclab.managers import ActionTerm, ActionTermCfg, CommandTerm, CommandTermCfg, RecorderTerm
 from isaaclab.managers import ManagerTermBase
 from isaaclab.utils import configclass
-from isaaclab.utils.math import euler_xyz_from_quat, subtract_frame_transforms
+from isaaclab.utils.math import euler_xyz_from_quat, quat_apply, subtract_frame_transforms
 
-from .geometry import pose, pose_error, reference, steady_state, transform
+from .geometry import pose, pose_error, steady_state, tcp_reference, transform
+from .protocol import TCP, TCP_INV, TCP_OFFSET_M
 from . import terminations as TR
 
 LEGS = [f"{leg}_{joint}_joint" for leg in ("FR", "FL", "RR", "RL") for joint in ("hip", "thigh", "calf")]
@@ -81,7 +82,7 @@ class StandingCommand(CommandTerm):
     def __init__(self, cfg, env):
         super().__init__(cfg, env)
         self.robot = env.scene["robot"]
-        self.hand = self.robot.find_bodies(["link06"])[0][0]
+        self.hand = self.robot.find_bodies(["link06"])[0][0]   # TCP parent; EE poses are hand pose x TCP (2.0.0)
         self.targets = [None] * env.num_envs   # None = nominal hold; set per env with assign()
         self.settled = [None] * env.num_envs
         self.initial_base = [None] * env.num_envs
@@ -110,7 +111,7 @@ class StandingCommand(CommandTerm):
     def evaluate(self, i):
         t = float(self._env.episode_length_buf[i]) * self._env.step_dt
         d = self.robot.data
-        measured = transform(d.body_pos_w[i, self.hand].cpu().numpy(), d.body_quat_w[i, self.hand].cpu().numpy())
+        measured = transform(d.body_pos_w[i, self.hand].cpu().numpy(), d.body_quat_w[i, self.hand].cpu().numpy()) @ TCP
         if self.settled[i] is None or t <= 2.0 + 1e-9:
             self.settled[i] = measured
             self.initial_base[i] = d.root_pos_w[i].cpu().numpy().copy()
@@ -120,7 +121,7 @@ class StandingCommand(CommandTerm):
             self.wheel_travel[i] = 0.0
         if self.targets[i] is None:
             return (measured, "settle", t, False) if t <= 2.0 else (measured, "hold", t-2.0, False)
-        return reference(self.targets[i], t, self.settled[i])
+        return tcp_reference(self.targets[i], t, self.settled[i], TCP, TCP_INV)
 
     def duration(self, i):
         t = self.targets[i]
@@ -154,10 +155,13 @@ class StandingCommandCfg(CommandTermCfg):
 
 
 def measured_ee(env):
+    """TCP pose in the base frame (2.0.0; 1.0.0: link06)."""
     robot = env.scene["robot"]
     hand = robot.find_bodies(["link06"])[0][0]
+    q_hand = robot.data.body_quat_w[:, hand]
+    offset = torch.tensor(TCP_OFFSET_M, device=env.device, dtype=q_hand.dtype).expand(env.num_envs, 3)
     p, q = subtract_frame_transforms(robot.data.root_pos_w, robot.data.root_quat_w,
-                                    robot.data.body_pos_w[:, hand], robot.data.body_quat_w[:, hand])
+                                    robot.data.body_pos_w[:, hand] + quat_apply(q_hand, offset), q_hand)
     return torch.cat([p, q], dim=1)
 
 
@@ -304,11 +308,14 @@ class StepRecorder(RecorderTerm):
             target = cmd.targets[i]
             if "invalid_state" not in monitor.reasons[i]:
                 goal, phase, phase_time, scored = cmd.evaluate(i)
-                actual = transform(d.body_pos_w[i, cmd.hand].cpu().numpy(), d.body_quat_w[i, cmd.hand].cpu().numpy())
+                actual = transform(d.body_pos_w[i, cmd.hand].cpu().numpy(), d.body_quat_w[i, cmd.hand].cpu().numpy()) @ TCP
                 body = transform(d.root_pos_w[i].cpu().numpy(), d.root_quat_w[i].cpu().numpy())
                 body_goal = pose(np.linalg.inv(body) @ goal)
                 errors = pose_error(actual, goal)
             goal_pose = pose(goal) if goal is not None else [None]*7
+            # TCP position (2.0.0); float64 from `actual` so exported errors match the logged pose exactly.
+            ee_pos = actual[:3, 3].tolist() if actual is not None else (d.body_pos_w[i, cmd.hand] + quat_apply(
+                d.body_quat_w[i, cmd.hand], torch.tensor(TCP_OFFSET_M, device=env.device, dtype=d.body_quat_w.dtype))).tolist()
             steady = bool(phase != "invalid" and steady_state(target, float(env.episode_length_buf[i])*env.step_dt))
             samples.append(dict(env_id=i, target_id=target["target_id"] if target else "nominal_hold",
                 family=target["family"] if target else "hold", sim_time_s=env.common_step_counter*env.step_dt,
@@ -317,7 +324,7 @@ class StepRecorder(RecorderTerm):
                 base_pos_world_xyz=d.root_pos_w[i].tolist(), base_quat_world_wxyz=d.root_quat_w[i].tolist(),
                 base_lin_vel_world_xyz=d.root_lin_vel_w[i].tolist(), base_ang_vel_body_xyz=d.root_ang_vel_b[i].tolist(),
                 projected_gravity_body_xyz=d.projected_gravity_b[i].tolist(),
-                ee_pos_world_xyz=d.body_pos_w[i, cmd.hand].tolist(), ee_quat_world_wxyz=d.body_quat_w[i, cmd.hand].tolist(),
+                ee_pos_world_xyz=ee_pos, ee_quat_world_wxyz=d.body_quat_w[i, cmd.hand].tolist(),
                 ee_goal_pos_world_xyz=list(goal_pose[:3]), ee_goal_quat_world_wxyz=list(goal_pose[3:]),
                 ee_goal_pos_body_xyz=list(body_goal[:3]) if body_goal is not None else None,
                 ee_goal_quat_body_wxyz=list(body_goal[3:]) if body_goal is not None else None,

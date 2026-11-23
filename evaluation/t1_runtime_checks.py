@@ -22,6 +22,7 @@ def checks(env, app, out, result, selected):
     g = importlib.import_module(package + ".geometry")
     k = importlib.import_module(package + ".kinematics")
     TR = importlib.import_module(package + ".terminations")
+    TP = importlib.import_module(package + ".protocol")
     robot = env.scene["robot"]
     action = env.action_manager.get_term("joints")
     cmd = env.command_manager.get_term("ee_pose")
@@ -78,7 +79,7 @@ def checks(env, app, out, result, selected):
     def frames_check():
         reset("coordinate_frames")
         goal = g.transform(robot.data.body_pos_w[0,cmd.hand].cpu().numpy(),
-                           robot.data.body_quat_w[0,cmd.hand].cpu().numpy())
+                           robot.data.body_quat_w[0,cmd.hand].cpu().numpy()) @ TP.TCP     # TCP target (2.0.0)
         old_targets = list(cmd.targets)
         cmd.targets[0] = dict(family="fixed",target_id="frame-probe",position_world_xyz=goal[:3,3].tolist(),
                              quaternion_world_wxyz=g.pose(goal)[3:].tolist(),hold_s=5.,steady_state_last_s=2.)

@@ -1,7 +1,7 @@
 # T1 — Standing 6D End-Effector Pose Tracking
 
 **Protocol ID:** `T1-STANDING-6D-EE`  
-**Version:** `1.0.0` (draft.7 + oracle scripted controller, fast shutdown, metrics_export completeness contract; `validate_t1` PASS 8/8 on 2026-11-12; advisor review of the [OPEN] points pending)  
+**Version:** `2.0.0` (2026-11-23: TCP end-effector frame, shared T1/T2/T3 termination set, active wheel channel; see "Protocol 2.0.0" below. 1.0.0: draft.7 + oracle scripted controller, fast shutdown, metrics_export completeness contract; `validate_t1` PASS 8/8 on 2026-11-12; advisor review of the [OPEN] points pending)  
 **Date:** 2026-11-12  
 **Platform:** Unitree B2W + Unitree Z1 arm, Isaac Lab / Isaac Sim (researcher confirmed)  
 **Work package:** WP1 — implement and validate T1–T3 task environments **before** model-free PPO training  
@@ -78,6 +78,29 @@ The draft.3 visual/CAD-mesh metric is dropped. Results under draft.3/4/5/7 must 
   (`--mode prepare`, frozen 24 + 9 manifest, world workspace bounds, `validate_manifest`) is removed.
 - *Runtime checks order:* `t1_runtime_checks.py` runs the fault checks first and the FK teleport check
   last, each from its own reset (`--checks` selects a subset). The failure term is unchanged.
+
+**Protocol 2.0.0 (2026-11-23; researcher; T3 protocol D19, D20, D22, D33).** Shared interface with T2/T3.
+
+- *End-effector frame = TCP:* `link06` pose × a fixed translation of 0.171 m along +x of `link06`
+  (`protocol.TCP_OFFSET_M`, shared with T2/T3). Targets, the reference, the `ee_pose_body` observation,
+  the command, the logged `ee_pos_world_xyz` and all errors use the TCP. The target file states its frame
+  (`ee_frame: tcp`, `tcp_parent: link06`, `tcp_offset_m`).
+- *Joint samples unchanged:* the sampler draws the same joint-space samples as 1.0.0. The filters (incl.
+  `ee_min_height` on the `link06` origin), the circle IK audit and the oracle joint paths stay on `link06`;
+  only the stored target poses move by R·(0.171, 0, 0). Quaternions are unchanged bit-for-bit.
+- *Reference = rigid map:* the TCP reference is the `link06` reference (quintic + slerp transition, circle)
+  right-multiplied by the offset at every instant (`geometry.tcp_reference`). During the (unscored) circle
+  transition the TCP path is therefore not a quintic in TCP position.
+- *Shared termination set* (`standing_ee/terminations.py`): tilt > 1.0 rad and base height < 0.274 m, each
+  for ≥ 5 consecutive control steps (1.0.0: tilt > 0.5 rad, height < 0.55·h₀, no debounce), and the
+  standing-drift rule (base x/y > 0.30 m from the position at the first control step after reset; reason
+  `standing_drift`). Contact, clearance and invalid-state rules unchanged. Fault checks test the debounce.
+- *Wheel channel:* wheel actions are velocity targets a_w · 10 rad/s (1.0.0: ignored). Zero wheel action
+  reproduces 1.0.0 exactly (T3 A15).
+- *Regression against 1.0.0 (D33):* per step of every trial, orientation error identical to 1.0.0 and
+  |e_pos_tcp − e_pos_flange| ≤ 0.171·θ_geo + 1e-6 (`evaluation/t1_tcp_regression.py`). The 1.0.0 target
+  file and run `diag-validate-v1c-20261112T142731Z-72ac7c0a` stay archived; the 2.0.0 validation run
+  becomes the new T1 reference.
 
 **Protocol 1.0.0 decisions (2026-11-12; researcher).**
 
@@ -317,9 +340,12 @@ The frozen object is the sampler, not a target list. Machine-readable copy: `pro
 
 ```yaml
 benchmark: T1-STANDING-6D-EE
-version: 1.0.0
+version: 2.0.0
 robot_variant: B2W
-end_effector_frame: link06
+end_effector_frame: tcp
+ee_frame: tcp
+tcp_parent: link06
+tcp_offset_m: [0.171, 0.0, 0.0]
 sampler:
   version: t1-joint-space-sampler-1
   fixed_count: 50
@@ -329,7 +355,8 @@ sampler:
   fixed: {hold_s: 5.0, steady_state_last_s: 2.0, ik: false}
   circle: {radius_m: 0.10, frequency_hz: 0.05, transition_s: 2.0, duration_s: 40.0,
            steady_state_start_s: 20.0, planes: [XY, XZ, YZ], plane_assignment: index mod 3,
-           orientation: constant, sample orientation (circle start)}
+           centre: TCP position of a joint-space sample, orientation: constant, sample orientation (circle start),
+           reference: rigid map of the link06 reference by the TCP offset}
   max_attempts_per_target: 400
 seed: per evaluation run (governs target sampling only)
 # Each run's seed-<seed>/targets.json holds the resolved targets, their joint-space samples,
@@ -345,8 +372,9 @@ Proposed diagnostics and termination:
 | Condition | Handling | Status |
 | --- | --- | --- |
 | Time budget reached | `timeout`; not a failure | **[PROPOSED]** |
-| Base height below safe threshold | `failure: fall` | **[PROPOSED]**; threshold derived from asset geometry, **not** copied from W1 |
-| Excessive base tilt | `failure: fall/instability` | **[PROPOSED]**; freeze in config after stance validation |
+| Base height below safe threshold | `failure: fall` (`fall_height`) | 2.0.0: < 0.274 m for ≥ 5 control steps (shared T1/T2/T3 set) |
+| Excessive base tilt | `failure: fall/instability` (`fall_tilt`) | 2.0.0: > 1.0 rad for ≥ 5 control steps (shared set) |
+| Standing drift | `failure: standing_drift` | 2.0.0: base x/y > 0.30 m from the position at the first control step after reset |
 | Base/EE contact with ground or forbidden object | `failure: collision` | **[PAPER-INSPIRED]**; distinguish allowed foot-ground contacts |
 | NaN/Inf state, invalid quaternion or broken simulation | `failure: invalid_state` | **[PROPOSED]** |
 | Foot lift/stance shift above tolerance | `standing_violation` flag; optionally failure after threshold approved | **[OPEN]** |

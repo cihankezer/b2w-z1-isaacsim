@@ -7,7 +7,7 @@ Pitch sign: positive = nose down (rotation about +y with x forward, z up; Isaac 
 
 import numpy as np
 
-from ..standing_ee.protocol import NOMINAL_BASE_POSITION_XYZ
+from ..standing_ee.protocol import NOMINAL_BASE_POSITION_XYZ, TCP_OFFSET_M, TCP_PARENT   # one TCP for T1 2.0.0, T2, T3
 
 VERSION = "1.1.0"   # 1.1.0 (2026-11-23): wheel channel a_w*s_w, shared termination set (T3 D6/D20/D22)
 BENCHMARK = "T2-REACH-LOW-HIGH"
@@ -17,8 +17,6 @@ ROBOT_VARIANT = "B2W"
 # link06 -> gripperStator is +0.051 m on the tool axis (+x of link06, verified in the asset) and the
 # fetch pipeline's grasp point is +0.12 m further along it (fetch_env_cfg.GRASP_POINT, x component).
 H_NOM_M = float(NOMINAL_BASE_POSITION_XYZ[2])
-TCP_PARENT = "link06"
-TCP_OFFSET_M = (0.171, 0.0, 0.0)
 TOOL_AXIS = "+x of link06"
 
 # §4.1 Bands (z = TCP height above ground) and azimuth sector in G.

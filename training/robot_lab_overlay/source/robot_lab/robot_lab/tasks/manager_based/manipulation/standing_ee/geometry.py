@@ -80,6 +80,24 @@ def reference(target, episode_time, settled_pose, settle_s=2.0):
     return circle(target, t)[0], "circle", t, scored
 
 
+def map_target(target, offset):
+    """Copy of a target with its pose right-multiplied by a pure-translation `offset` (e.g. link06 -> TCP).
+    The quaternion is kept bit-for-bit; only the position moves by R @ offset. Circle offsets are world
+    translations with constant orientation, so mapping the centre pose maps the whole circle."""
+    if not np.array_equal(offset[:3, :3], np.eye(3)):
+        raise ValueError("map_target expects a pure translation")
+    key = "position_world_xyz" if target["family"] == "fixed" else "centre_world_xyz"
+    moved = transform(target[key], target["quaternion_world_wxyz"]) @ offset
+    return dict(target, **{key: moved[:3, 3].tolist()})
+
+
+def tcp_reference(target, episode_time, settled_pose, tcp, tcp_inv, settle_s=2.0):
+    """TCP reference as the rigid map of the link06 reference (T1 2.0.0, D33): target and settled pose are
+    TCP poses; the link06 reference (quintic + slerp transition, circle) is right-multiplied by the offset."""
+    desired, phase, t, scored = reference(map_target(target, tcp_inv), episode_time, settled_pose @ tcp_inv, settle_s)
+    return desired @ tcp, phase, t, scored
+
+
 def steady_state(target, episode_time, settle_s=2.0):
     """Fixed targets: the last steady_state_last_s of the hold (100 samples for 2 s). Circles: none."""
     if target is None or target["family"] != "fixed":

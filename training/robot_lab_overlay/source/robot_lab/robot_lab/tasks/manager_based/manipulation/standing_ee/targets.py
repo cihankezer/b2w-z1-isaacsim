@@ -1,7 +1,8 @@
 """Seeded joint-space target sampler (protocol draft.7) and circle path audit.
 
 Fixed targets: arm joints uniform within the 90 % soft limits (legs/base/gripper nominal) -> FK -> 6D
-link06 pose; filters only (self/ground clearance >= 5 mm on the monitor geometry, EE not below the
+TCP pose (link06 x TCP offset, 2.0.0); filters and the circle IK audit act on link06 as in 1.0.0, so the
+joint samples are unchanged; filters only (self/ground clearance >= 5 mm on the monitor geometry, EE not below the
 base). No IK and no workspace box. Circles: centre and constant orientation from such a sample; the
 whole transition + circle is IK/clearance-checked at 10 Hz. A discrete check, not a continuous-
 collision proof. Uniform in joint space is not uniform in task space (accepted choice).
@@ -11,9 +12,10 @@ from collections import Counter
 
 import numpy as np
 
-from .geometry import pose, reference, transform
+from .geometry import map_target, pose, reference, transform
 from .protocol import (CLEARANCE_POLICY, NOMINAL_ARM_POSE, NOMINAL_BASE_POSITION_XYZ, NOMINAL_BASE_QUAT_WXYZ,
-                       NOMINAL_LEG_JOINT_POS, SAMPLER, SOFT_LIMIT_FACTOR, VERSION, target_digest, validate_targets)
+                       NOMINAL_LEG_JOINT_POS, SAMPLER, SOFT_LIMIT_FACTOR, TARGET_FRAME, TCP, VERSION, target_digest,
+                       validate_targets)
 
 PLANES = {"XY": ([1, 0, 0], [0, 1, 0]), "XZ": ([1, 0, 0], [0, 0, 1]), "YZ": ([0, 1, 0], [0, 0, 1])}
 
@@ -102,7 +104,7 @@ def sample(model, seed, hashes, fixed_count=SAMPLER["fixed_count"], circle_count
             if reason:
                 reject("fixed", reason)
                 continue
-            goal = pose(frames["link06"])
+            goal = pose(frames["link06"] @ TCP)
             finish(dict(target_id=f"fixed-{i:02d}", family="fixed", position_world_xyz=goal[:3].tolist(),
                         quaternion_world_wxyz=goal[3:].tolist(), joint_space_sample_rad=q.tolist(),
                         hold_s=SAMPLER["fixed"]["hold_s"], steady_state_last_s=SAMPLER["fixed"]["steady_state_last_s"]),
@@ -127,16 +129,16 @@ def sample(model, seed, hashes, fixed_count=SAMPLER["fixed_count"], circle_count
             if reason:
                 reject("circle", reason)
                 continue
-            finish(target, attempts["circle"], ik_path=path)
+            finish(map_target(target, TCP), attempts["circle"], ik_path=path)
             break
     approx = sorted({s["path"]: s.get("cooking_issue") for shapes in model.shapes.values() for s in shapes
                      if s.get("source") == "approx_hull"}.items())
     return validate_targets(dict(
-        benchmark="T1-STANDING-6D-EE", protocol_version=VERSION, robot_variant="B2W", end_effector_frame="link06",
+        benchmark="T1-STANDING-6D-EE", protocol_version=VERSION, robot_variant="B2W", **TARGET_FRAME,
         seed=int(seed), settle_s=2.0, sampler=SAMPLER, counts={"fixed": fixed_count, "circle": circle_count},
         protocol_counts=(fixed_count, circle_count) == (SAMPLER["fixed_count"], SAMPLER["circle_count"]),
         asset_hashes=hashes, nominal_base_pose_env=pose(base).tolist(), nominal_joint_pos=joints,
-        nominal_ee_pose_env=pose(settled).tolist(), soft_limits_rad=dict(zip(model.arm_names, np.c_[lo, hi].tolist())),
+        nominal_ee_pose_env=pose(settled @ TCP).tolist(), soft_limits_rad=dict(zip(model.arm_names, np.c_[lo, hi].tolist())),
         clearance_policy=CLEARANCE_POLICY, approx_hull_colliders=[dict(path=p, cooking_issue=i) for p, i in approx],
         attempts=attempts, rejections={f: dict(sorted(r.items())) for f, r in rejections.items()},
         rejection_details=dict(pairs.most_common()), targets=targets))

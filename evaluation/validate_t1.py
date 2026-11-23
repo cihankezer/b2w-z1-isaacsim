@@ -110,7 +110,7 @@ def check_hold(directory):
     expected = ([f"{leg}_{joint}_joint" for leg in ("FR", "FL", "RR", "RL")
                  for joint in ("hip", "thigh", "calf")] +
                 [f"{leg}_foot_joint" for leg in ("FR", "FL", "RR", "RL")] + [f"joint{i}" for i in range(1,7)])
-    require(meta["robot_variant"] == "B2W" and meta["end_effector_frame"] == "link06", "Robot/TCP mismatch")
+    require(meta["robot_variant"] == "B2W" and meta["end_effector_frame"] == "tcp", "Robot/TCP mismatch")
     require(meta["num_envs"] == 1 and meta["seed"] == 1101, "Hold must use one environment and seed 1101")
     # draft.4 gripper asset: the 22 action joints plus at most jointGripper (as StandingAction, runtime.py:26-28)
     extra = sorted(set(meta["joint_order"]) - set(expected))
@@ -138,7 +138,14 @@ def check_hold(directory):
         require(np.all(np.asarray(row["applied_joint_targets"])[12:16] == 0), "Nonzero wheel target")
         if row["episode_time_s"] > 2:
             require(not row["standing_violation"], "Standing compliance failed after settling")
-    return dict(duration_s=30, samples=len(rows), joint_order=expected, tcp="link06", actuator_types=meta["actuator_types"])
+    return dict(duration_s=30, samples=len(rows), joint_order=expected, tcp="tcp", actuator_types=meta["actuator_types"])
+
+
+def tcp_ref(geometry, sampled, target, t, settled):
+    """T1 2.0.0 reference: rigid map of the link06 reference by the TCP offset stated in the target file."""
+    o = np.asarray(sampled["tcp_offset_m"], dtype=float)
+    return geometry.tcp_reference(target, t, settled, geometry.transform(o, [1, 0, 0, 0]),
+                                  geometry.transform(-o, [1, 0, 0, 0]))
 
 
 def check_references(sampled, family, geometry, protocol):
@@ -153,7 +160,7 @@ def check_references(sampled, family, geometry, protocol):
         if family == "fixed":
             expected = geometry.transform(target["position_world_xyz"], target["quaternion_world_wxyz"])
             for t in np.arange(1,round(target["hold_s"]/.02)+1)*.02 + 2:
-                np.testing.assert_allclose(geometry.reference(target,t,settled)[0], expected, atol=1e-12, rtol=0)
+                np.testing.assert_allclose(tcp_ref(geometry,sampled,target,t,settled)[0], expected, atol=1e-12, rtol=0)
         else:
             path = target["sampler_audit"]["ik_path"]
             require(len(path) == 421 and all(np.asarray(p["arm_joint_pos_rad"]).shape == (6,) and
@@ -171,7 +178,7 @@ def check_references(sampled, family, geometry, protocol):
             np.testing.assert_allclose(geometry.circle(target,0)[0], geometry.circle(target,20)[0], atol=1e-12, rtol=0)
             # Independent finite differences check C2 translation and smooth orientation at entry.
             h = 1e-3
-            poses = [geometry.reference(target,4+j*h,settled)[0] for j in range(-3,4)]
+            poses = [tcp_ref(geometry,sampled,target,4+j*h,settled)[0] for j in range(-3,4)]
             velocity_left = (3*poses[3][:3,3]-4*poses[2][:3,3]+poses[1][:3,3])/(2*h)
             velocity_right = (-3*poses[3][:3,3]+4*poses[4][:3,3]-poses[5][:3,3])/(2*h)
             np.testing.assert_allclose(velocity_left, velocity_right, atol=1e-5, rtol=0)
@@ -179,7 +186,7 @@ def check_references(sampled, family, geometry, protocol):
             acceleration_right = (2*poses[3][:3,3]-5*poses[4][:3,3]+4*poses[5][:3,3]-poses[6][:3,3])/h**2
             np.testing.assert_allclose(acceleration_left, acceleration_right, atol=1e-4, rtol=0)
             np.testing.assert_allclose(poses[2][:3,:3], poses[4][:3,:3], atol=1e-7, rtol=0)
-            start = [geometry.reference(target,2+j*h,settled)[0] for j in range(4)]
+            start = [tcp_ref(geometry,sampled,target,2+j*h,settled)[0] for j in range(4)]
             np.testing.assert_allclose(start[0],settled,atol=1e-12,rtol=0)
             np.testing.assert_allclose((-3*start[0][:3,3]+4*start[1][:3,3]-start[2][:3,3])/(2*h),0,atol=1e-5,rtol=0)
             np.testing.assert_allclose((2*start[0][:3,3]-5*start[1][:3,3]+4*start[2][:3,3]-start[3][:3,3])/h**2,
@@ -227,7 +234,7 @@ def check_metrics(rows, summaries, sampled, geometry, origins):
         np.testing.assert_allclose(logged,actual,atol=TOLERANCES["export_error"],rtol=0,err_msg="Exported pose error mismatch")
     outcomes = dict(completed=0, terminated=0)
     for target in sampled["targets"]:
-        # protocol 1.0.0: every trial (completed or terminated) must be complete and self-consistent.
+        # protocol 1.0.0/2.0.0: every trial (completed or terminated) must be complete and self-consistent.
         trial = [r for r in rows if r["target_id"] == target["target_id"]]
         summary = next(s for s in summaries if s["target_id"] == target["target_id"])
         require(trial, "Trial has no samples")
@@ -259,7 +266,7 @@ def check_metrics(rows, summaries, sampled, geometry, origins):
             require(row["scored"] == geometry.reference(target,tick*.02,np.eye(4))[3], "Incorrect tracking mask")
             require(row["steady"] == geometry.steady_state(target,tick*.02), "Incorrect steady-state mask")
             if row["episode_time_s"] > 2:
-                expected = geometry.pose(geometry.reference(shifted,tick*.02,settled)[0])
+                expected = geometry.pose(tcp_ref(geometry,sampled,shifted,tick*.02,settled)[0])
                 reference_error = independent_errors(row[POSE_FIELDS[2]],row[POSE_FIELDS[3]],expected[:3],expected[3:])
                 require(np.max(reference_error) < TOLERANCES["export_error"],"Logged reference differs from sampled target")
             if row["scored"]:
@@ -375,7 +382,7 @@ def main(argv=None):
     args.out = args.out.resolve()
     args.out.mkdir(parents=True,exist_ok=False)
     report = new_report(args.cpu_only)
-    config = dict(protocol_version="1.0.0",robot="B2W+Z1",tcp="link06",seed=1101,device=args.device,
+    config = dict(protocol_version="2.0.0",robot="B2W+Z1",tcp="tcp (link06 + 0.171 m x)",seed=1101,device=args.device,
                   nominal_hold_s=30,physics_dt_s=.005,control_dt_s=.02,controller="oracle",tolerances=TOLERANCES,
                   tolerances_status="PROPOSED; fixed before the run",mode=report["mode"],
                   image_id=os.environ.get("T1_IMAGE_ID"),gpu_uuid=os.environ.get("ISAAC_GPU_UUID"),

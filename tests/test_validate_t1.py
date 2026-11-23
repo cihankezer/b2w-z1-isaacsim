@@ -36,7 +36,7 @@ def trace(target):
     rows = []
     for tick in range(1,round(duration/.02)+1):
         t = tick*.02
-        reference,phase,phase_time,scored = g.reference(target,t,settled)
+        reference,phase,phase_time,scored = g.tcp_reference(target,t,settled,p.TCP,p.TCP_INV)   # T1 2.0.0
         desired = g.pose(reference)
         actual = settled.copy() if t <= 2 else reference.copy()
         if t > 2:
@@ -133,12 +133,12 @@ def test_report_requires_eight_passes_and_artifacts(tmp_path):
 @pytest.mark.parametrize("target",[fixed(),circle()])
 def test_independent_metrics_and_steady_state_summary(target):
     rows,summary = trace(target)
-    evidence = v.check_metrics(rows,[summary],{"targets":[target]},g,[[0,0,0]])
+    evidence = v.check_metrics(rows,[summary],{**p.TARGET_FRAME,"targets":[target]},g,[[0,0,0]])
     assert evidence["trials"] == 1
     assert v.compare_repetitions(rows,copy.deepcopy(rows))["samples_per_repetition"] == len(rows)
     rows[-1]["position_error_m"] += .001
     with pytest.raises(AssertionError,match="pose error mismatch"):
-        v.check_metrics(rows,[summary],{"targets":[target]},g,[[0,0,0]])
+        v.check_metrics(rows,[summary],{**p.TARGET_FRAME,"targets":[target]},g,[[0,0,0]])
 
 
 def test_reference_tampering_cannot_hide_behind_recomputed_errors():
@@ -147,7 +147,7 @@ def test_reference_tampering_cannot_hide_behind_recomputed_errors():
     errors = v.independent_errors(rows[-1][v.POSE_FIELDS[0]],rows[-1][v.POSE_FIELDS[1]],rows[-1][v.POSE_FIELDS[2]],rows[-1][v.POSE_FIELDS[3]])
     for key,error in zip(v.METRIC_FIELDS[:3],errors):rows[-1][key] = float(error)
     with pytest.raises(ValueError,match="sampled target"):
-        v.check_metrics(rows,[summary],{"targets":[target]},g,[[0,0,0]])
+        v.check_metrics(rows,[summary],{**p.TARGET_FRAME,"targets":[target]},g,[[0,0,0]])
 
 
 def terminated(target, ticks=200, reason=("collision_arm_contact",)):
@@ -165,43 +165,43 @@ def terminated(target, ticks=200, reason=("collision_arm_contact",)):
 @pytest.mark.parametrize("target",[fixed(),circle()])
 def test_terminated_trials_are_checked_for_completeness_not_success(target):
     rows,summary = terminated(target)
-    assert v.check_metrics(rows,[summary],{"targets":[target]},g,[[0,0,0]])["outcomes"] == {"completed":0,"terminated":1}
+    assert v.check_metrics(rows,[summary],{**p.TARGET_FRAME,"targets":[target]},g,[[0,0,0]])["outcomes"] == {"completed":0,"terminated":1}
     bad = copy.deepcopy(summary);bad["failure_reason"] = ["fall_tilt"]
     with pytest.raises(ValueError,match="summary disagrees"):
-        v.check_metrics(rows,[bad],{"targets":[target]},g,[[0,0,0]])
+        v.check_metrics(rows,[bad],{**p.TARGET_FRAME,"targets":[target]},g,[[0,0,0]])
     bad = copy.deepcopy(summary);bad["tracking_position_m_mean"] = .01
     with pytest.raises(ValueError,match="reports aggregate errors"):
-        v.check_metrics(rows,[bad],{"targets":[target]},g,[[0,0,0]])
+        v.check_metrics(rows,[bad],{**p.TARGET_FRAME,"targets":[target]},g,[[0,0,0]])
     bad = copy.deepcopy(summary);bad["tracking_sample_count"] += 1
     with pytest.raises(ValueError,match="sample count"):
-        v.check_metrics(rows,[bad],{"targets":[target]},g,[[0,0,0]])
+        v.check_metrics(rows,[bad],{**p.TARGET_FRAME,"targets":[target]},g,[[0,0,0]])
     other = copy.deepcopy(rows);other[-1].update(terminated=False,failure_reason=[])
     with pytest.raises(ValueError,match="terminal flags"):
-        v.check_metrics(other,[summary],{"targets":[target]},g,[[0,0,0]])
+        v.check_metrics(other,[summary],{**p.TARGET_FRAME,"targets":[target]},g,[[0,0,0]])
     other = copy.deepcopy(rows);other[-1]["tilt_rad"] = float("nan")
     with pytest.raises(ValueError,match="Nonfinite"):
-        v.check_metrics(other,[summary],{"targets":[target]},g,[[0,0,0]])
+        v.check_metrics(other,[summary],{**p.TARGET_FRAME,"targets":[target]},g,[[0,0,0]])
 
 
 def test_incomplete_inconsistent_and_duplicate_trials_are_rejected():
     target = fixed();rows,summary = trace(target)
     with pytest.raises(ValueError,match="Incomplete completed rollout"):
-        v.check_metrics(rows[:-1],[summary],{"targets":[target]},g,[[0,0,0]])
+        v.check_metrics(rows[:-1],[summary],{**p.TARGET_FRAME,"targets":[target]},g,[[0,0,0]])
     failed = copy.deepcopy(rows);failed[-1].update(failure=True,terminated=True,truncated=False,failure_reason=["fall_tilt"])
     with pytest.raises(ValueError,match="Completed trial flags"):
-        v.check_metrics(failed,[summary],{"targets":[target]},g,[[0,0,0]])
+        v.check_metrics(failed,[summary],{**p.TARGET_FRAME,"targets":[target]},g,[[0,0,0]])
     early = copy.deepcopy(rows);early[100].update(terminated=True)
     with pytest.raises(ValueError,match="continued after its end"):
-        v.check_metrics(early,[summary],{"targets":[target]},g,[[0,0,0]])
+        v.check_metrics(early,[summary],{**p.TARGET_FRAME,"targets":[target]},g,[[0,0,0]])
     with pytest.raises(ValueError,match="Duplicate"):
-        v.check_metrics(rows,[summary,summary],{"targets":[target,target]},g,[[0,0,0]])
+        v.check_metrics(rows,[summary,summary],{**p.TARGET_FRAME,"targets":[target,target]},g,[[0,0,0]])
 
 
 def test_summary_and_stability_repeatability_failures():
     target = fixed();rows,summary = trace(target)
     summary["tracking_position_m_mean"] += .01
     with pytest.raises(ValueError,match="Incorrect summary"):
-        v.check_metrics(rows,[summary],{"targets":[target]},g,[[0,0,0]])
+        v.check_metrics(rows,[summary],{**p.TARGET_FRAME,"targets":[target]},g,[[0,0,0]])
     other = copy.deepcopy(rows);other[-1]["tilt_rad"] += .001
     with pytest.raises(ValueError,match="Repeatability failed"):
         v.compare_repetitions(rows,other)
@@ -228,7 +228,7 @@ def test_partial_export_retains_failure_and_injection_label(tmp_path):
 def hold_fixture(directory):
     names = ([f'{leg}_{joint}_joint' for leg in ('FR','FL','RR','RL') for joint in ('hip','thigh','calf')] +
              [f'{leg}_foot_joint' for leg in ('FR','FL','RR','RL')] + [f'joint{i}' for i in range(1,7)])
-    meta = dict(robot_variant='B2W',end_effector_frame='link06',num_envs=1,seed=1101,action_order=names,joint_order=names,
+    meta = dict(robot_variant='B2W',end_effector_frame='tcp',num_envs=1,seed=1101,action_order=names,joint_order=names,
                 actuator_types={'legs':'ImplicitActuator','wheel':'ImplicitActuator','arm':'ImplicitActuator'},
                 loaded_joint_parameters={'joint_stiffness':[800]*12+[0]*4+[100]*6,'joint_damping':[20]*22,
                                          'joint_vel_limits':[10]*22,'joint_effort_limits':[200]*22},
@@ -281,7 +281,7 @@ def sampled_fixture():
         t['sampler_audit'] = dict(attempt_index=1,target_sha256=p.target_digest(t))
         if t['family'] == 'circle':
             t['sampler_audit']['ik_path'] = [dict(episode_time_s=2+.1*j,arm_joint_pos_rad=[0]*6) for j in range(421)]
-    return dict(protocol_version=p.VERSION,robot_variant='B2W',end_effector_frame='link06',seed=1101,settle_s=2.,
+    return dict(protocol_version=p.VERSION,robot_variant='B2W',**p.TARGET_FRAME,seed=1101,settle_s=2.,
                 sampler=p.SAMPLER,counts={'fixed':2,'circle':3},asset_hashes={'fixture.usd':'fixture'},
                 nominal_ee_pose_env=[.4,0,.8,1,0,0,0],rejections={'fixed':{},'circle':{}},
                 attempts={'fixed':2,'circle':3},targets=targets)
@@ -304,7 +304,7 @@ def test_orchestration_contract_with_stubbed_simulator(tmp_path,monkeypatch,cras
         if not crashed:
             v.write_json(directory/'completion.json',{'status':'finished'})
         metadata = {k:'fixture' for k in ('actuator_types','loaded_joint_parameters','asset_hashes','image_id','gpu_uuid','controller','git','versions')}
-        metadata.update(robot_variant='B2W',end_effector_frame='link06',seed=1101,num_envs=4 if name.startswith('evaluate') else 1,
+        metadata.update(robot_variant='B2W',end_effector_frame='tcp',seed=1101,num_envs=4 if name.startswith('evaluate') else 1,
                         physics_dt_s=.005,control_dt_s=.02,environment_origins_world_xyz=[[0,0,0]])
         v.write_json(directory/'interface.json',metadata)
         if name.startswith('runtime_'):
