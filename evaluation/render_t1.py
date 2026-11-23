@@ -4,7 +4,7 @@
 One frame per control step (50 Hz, played at 50 fps = real time), full protocol episodes
 (settle 2 s + fixed hold 5 s incl. the 2 s quintic transition; circle: settle 2 s + transition 2 s +
 circle 40 s). Scene markers: target frame (long axes) and EE/link06 frame (short axes), RGB = xyz;
-optional EE trail. Pass 1 renders <name>_raw.mp4 and writes this run's steps.csv; pass 2 draws the
+optional EE trail. Pass 1 renders <name>_raw.mp4 and writes this run's <name>_steps.csv; pass 2 draws the
 overlay (time, target index, position/orientation error) from steps.csv into <name>.mp4.
 <name>.json is the sidecar: command, per-target errors (protocol.target_metrics), frame counts.
 """
@@ -13,6 +13,7 @@ import hashlib
 import importlib
 import importlib.util
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -110,7 +111,7 @@ def main():
     cfg.sim.render_interval = 10**6   # render explicitly after each control step (markers in sync)
     cfg.scene.render_cam = CameraCfg(prim_path="{ENV_REGEX_NS}/RenderCam", update_period=0.0, width=args.width,
                                      height=args.height, data_types=["rgb"],
-                                     spawn=sim_utils.PinholeCameraCfg(focal_length=24.0, clipping_range=(0.05, 50.0)))
+                                     spawn=sim_utils.PinholeCameraCfg(focal_length=18.0, clipping_range=(0.05, 50.0)))
     env = gym.make(protocol.TASK_ID, cfg=cfg).unwrapped
     robot, command, camera = env.scene["robot"], env.command_manager.get_term("ee_pose"), env.scene["render_cam"]
     action = env.action_manager.get_term("joints")
@@ -139,7 +140,7 @@ def main():
         base = robot.data.root_pos_w[0].cpu().numpy()
         yaw = float(torch.atan2(robot.data.root_quat_w[0, 3], robot.data.root_quat_w[0, 0])) * 2
         direction = np.array([np.cos(yaw + np.pi/4), np.sin(yaw + np.pi/4), 0.0])   # front-left of the robot
-        look = base + np.array([0.15, 0.0, 0.35])
+        look = base + np.array([0.15, 0.0, 0.25])
         eye = look + 2.3 * direction + np.array([0.0, 0.0, 0.95])                  # |eye - look| ~ 2.49 m
         camera.set_world_poses_from_view(torch.tensor(eye[None], dtype=torch.float32, device=env.device),
                                          torch.tensor(look[None], dtype=torch.float32, device=env.device))
@@ -154,7 +155,7 @@ def main():
     writer = imageio_ffmpeg.write_frames(str(raw), (args.width, args.height), fps=50, codec="libx264", macro_block_size=8,
                                          output_params=["-crf", "10", "-preset", "fast", "-pix_fmt", "yuv420p"])
     writer.send(None)
-    log = ev.CsvLog(args.out/"steps.csv")
+    log = ev.CsvLog(args.out/f"{args.name}_steps.csv")
     nominal_q = np.array([protocol.NOMINAL_ARM_POSE[f"joint{i}"] for i in range(1, 7)])
     trials, frame_count, start, distance = [], 0, time.monotonic(), None
     with torch.inference_mode():
@@ -199,7 +200,7 @@ def main():
     render_s = time.monotonic() - start
     labels = {t["target_id"]: (i + 1, len(targets)) for i, t in enumerate(targets)}
     final = args.out/f"{args.name}.mp4"
-    composed = compose(raw, args.out/"steps.csv", final, labels, protocol.VERSION, sampled["seed"], args.width, args.height)
+    composed = compose(raw, args.out/f"{args.name}_steps.csv", final, labels, protocol.VERSION, sampled["seed"], args.width, args.height)
     per_target = []
     for trial in trials:
         m = protocol.target_metrics(trial)
@@ -214,14 +215,14 @@ def main():
                                steady_position_mean_cm=None if m["steady_position_m_mean"] is None else 100*m["steady_position_m_mean"],
                                steady_orientation_mean_deg=None if m["steady_orientation_geodesic_rad_mean"] is None
                                else float(np.degrees(m["steady_orientation_geodesic_rad_mean"]))))
-    sidecar = dict(video=str(final), raw_video=str(raw), steps_csv=str(args.out/"steps.csv"), protocol_version=protocol.VERSION,
+    sidecar = dict(video=str(final), raw_video=str(raw), steps_csv=str(args.out/f"{args.name}_steps.csv"), protocol_version=protocol.VERSION,
                    seed=sampled["seed"], targets_json=str(args.targets), target_ids=ids, controller="oracle", num_envs=1,
                    resolution=[args.width, args.height], fps=50, control_dt_s=env.step_dt, real_time=True,
                    frames=composed, duration_s=composed/50, camera=dict(placement="front-left of the robot (yaw+45 deg)",
-                   distance_to_look_point_m=distance, focal_length_mm=24.0), render_wall_s=render_s,
+                   distance_to_look_point_m=distance, focal_length_mm=18.0), render_wall_s=render_s,
                    episode_definition="full protocol episodes: settle 2 s; fixed: 5 s hold incl. 2 s quintic transition; "
                                       "circle: 2 s transition + 40 s circle",
-                   metrics="protocol.target_metrics on this run's steps.csv (fixed: whole 5 s hold / last 2 s; circle: (20, 40] s)",
+                   metrics="protocol.target_metrics on this run's <name>_steps.csv (fixed: whole 5 s hold / last 2 s; circle: (20, 40] s)",
                    command_argv=sys.argv, per_target=[{k: (float(v) if isinstance(v, (np.floating,)) else v) for k, v in r.items()}
                                                       for r in per_target],
                    sha256=hashlib.sha256(final.read_bytes()).hexdigest())
@@ -233,4 +234,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except BaseException:   # an exception before app.close() otherwise hangs Kit's shutdown
+        import traceback
+        traceback.print_exc()
+        sys.stdout.flush()
+        os._exit(1)

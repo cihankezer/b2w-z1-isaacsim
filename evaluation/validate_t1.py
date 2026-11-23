@@ -318,7 +318,7 @@ def run_child(out, name, script, arguments):
     print(f"T1 validation: {name}",flush=True)
     try:
         with (directory/"stdout.log").open("w") as log:
-            result = subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,timeout=1800)
+            result = subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,timeout=3600)
         process = dict(exit_code=result.returncode,timed_out=False)
     except (subprocess.TimeoutExpired,OSError) as exc:
         process = dict(exit_code=None,timed_out=isinstance(exc,subprocess.TimeoutExpired),error=str(exc))

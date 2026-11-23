@@ -39,3 +39,6 @@ moveit/config/z1.urdf
 # we donot want papers to publish in Github
 *.pdf
 
+# we donot want to commit the video files
+*.mp4
+

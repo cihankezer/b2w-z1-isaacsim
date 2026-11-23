@@ -1,8 +1,8 @@
 # T1 — Standing 6D End-Effector Pose Tracking
 
 **Protocol ID:** `T1-STANDING-6D-EE`  
-**Version:** `1.0.0-draft.7` (gripper asset; nominal initial state; collider self-clearance monitor with approx_hull mesh colliders; seeded joint-space target sampler; runtime acceptance and advisor review pending; draft.6 skipped)  
-**Date:** 2026-11-11  
+**Version:** `1.0.0` (draft.7 + oracle scripted controller, fast shutdown, metrics_export completeness contract; `validate_t1` PASS 8/8 on 2026-11-12; advisor review of the [OPEN] points pending)  
+**Date:** 2026-11-12  
 **Platform:** Unitree B2W + Unitree Z1 arm, Isaac Lab / Isaac Sim (researcher confirmed)  
 **Work package:** WP1 — implement and validate T1–T3 task environments **before** model-free PPO training  
 **Primary reference:** Jiang et al., *Learning Whole-Body Loco-Manipulation for Omni-Directional Task Space Pose Tracking with a Wheeled-Quadrupedal-Manipulator*, IEEE RA-L (2025), [arXiv:2412.03012](https://arxiv.org/abs/2412.03012).  
@@ -78,6 +78,26 @@ The draft.3 visual/CAD-mesh metric is dropped. Results under draft.3/4/5/7 must 
   (`--mode prepare`, frozen 24 + 9 manifest, world workspace bounds, `validate_manifest`) is removed.
 - *Runtime checks order:* `t1_runtime_checks.py` runs the fault checks first and the FK teleport check
   last, each from its own reset (`--checks` selects a subset). The failure term is unchanged.
+
+**Protocol 1.0.0 decisions (2026-11-12; researcher).**
+
+- *metrics_export* checks **completeness and consistency of every trial**, successful or terminated
+  (`validate_t1.check_metrics`): no failure flag before the last row; a successful trial has the full
+  row count, ends truncated and its summary flags match; a terminated trial ends terminated with failure
+  and a failure reason, its summary is consistent, its aggregate errors are null and its sample counts
+  match the window masks; successful trials' mean/RMS/max are recomputed independently. Success is not required.
+- *Teardown closed:* all T1 scripts use Isaac Sim's default `fast_shutdown=True` (`AppLauncher(args)`;
+  evidence in the 2026-11-12 teardown bisection below). Outcomes are still judged by `completion.json`.
+- *Second ArticulationRootAPI* on `/Unitree_B2W/z1/root_joint` of `b2w_z1_gripper.usd` is an **asset
+  finding, no change**: Isaac Lab binds `base_link` (36 bodies, floating base); the extra root did not
+  cause the teardown crash.
+- *Oracle scripted controller* (`eval_t1.oracle_arm_q`, `--controller oracle|ik`, default `oracle`), used
+  by `validate_t1` and for demos: fixed targets follow a 2 s quintic joint-space transition from the
+  nominal arm pose to the target's `joint_space_sample_rad`, then hold it; circles replay the stored
+  sampler-audit IK joint path (`sampler_audit.ik_path`, linear interpolation). Joint targets pass
+  through the unchanged action term (same gains, same soft-limit clamping). Terminations remain genuine
+  failures. The DLS-IK controller (`--controller ik`) is kept as a diagnostic.
+- `validate_t1` child timeout 3600 s (was 1800 s; a concurrent RTX render slowed one rollout past 1800 s).
 - *Reset contact = stale spawn data (2026-11-12, researcher decision; developer input).* The robot is
   spawned at the USD default pose, i.e. the **CAD zero pose** (folded arm/legs; not an intended pose).
   `T1_ROBOT_CFG.init_state` is already the nominal state (`env_cfg.py`), but Isaac Lab only stores
@@ -297,7 +317,7 @@ The frozen object is the sampler, not a target list. Machine-readable copy: `pro
 
 ```yaml
 benchmark: T1-STANDING-6D-EE
-version: 1.0.0-draft.7
+version: 1.0.0
 robot_variant: B2W
 end_effector_frame: link06
 sampler:
@@ -450,9 +470,9 @@ If a field is inapplicable (e.g., wheels on B2), mark it explicitly as `null`, n
   `diag-train-rfm-1it-20261112T114534Z-468681b7`) exits 0 after `learn_returned`; `app.close()` with Isaac Sim's default
   `fast_shutdown=True` ends the process without Python finalization. T1 with `fast_shutdown=True`
   (`diag-oc-t1-fast-{1,2,3}-*`) exits 0 3/3; the control with `False` (`diag-oc-t1-slow-1-*`) aborts.
-  Conclusion: the crash follows `fast_shutdown=False`, not the asset or its second root. **[PROPOSED]**
-  use the default fast shutdown in T1 scripts (all artifacts are already written before teardown);
-  the second root on the gripper USD is real but did not cause this crash.
+  Conclusion: the crash follows `fast_shutdown=False`, not the asset or its second root. **Adopted in
+  1.0.0:** all T1 scripts use the default fast shutdown (all artifacts are written before teardown);
+  the second root on the gripper USD is real but did not cause this crash (asset finding, no change).
 - *validate_t1 end to end* (`diag-validate-full2-20261112T114913Z-5bf2b0e1`, 47.4 min wall): **FAIL 7/8**.
   PASS: robot_physics (30 s hold), coordinate_frames, error_metrics, fixed_pose_generator,
   circle_generator, standing_termination, reproducibility (target set byte-identical; traces max
@@ -465,6 +485,22 @@ If a field is inapplicable (e.g., wheels on B2), mark it explicitly as `null`, n
   The first attempt (`diag-validate-full-20261112T114732Z-6808879a`) stopped at robot_physics on a stale
   validator rule (exactly 22 articulation joints; the gripper asset has jointGripper), fixed to accept the
   22 action joints plus at most jointGripper.
+
+**Runtime findings (2026-11-12, protocol 1.0.0).**
+- *validate_t1 end to end* (`diag-validate-v1c-20261112T142731Z-72ac7c0a`; image `sha256:b52a5210…`;
+  GPU `GPU-fee1ef35-…`; host wall 3656 s): **PASS 8/8**, all children exit 0 with `fast_shutdown=True`
+  (evaluate 2018 s / 1526 s, hold 53 s, runtime checks 12 s each). robot_physics (30 s hold, 1500
+  samples); coordinate_frames (18 states, 0.53 µm / 1.3 µrad); error_metrics; fixed_pose_generator (50
+  targets, 61 attempts); circle_generator (10 targets, 207 attempts); standing_termination (7/7 cases);
+  reproducibility (target set byte-identical, traces max difference 0.0 over 35,937 samples);
+  metrics_export (60 trials: 56 completed, 4 terminated, both repetitions).
+- *Oracle results, seed 1101* (`runs/evaluate_1/.../aggregate_summary.json`; mean ± std over successful
+  targets, ddof 1): fixed 48/50 success (fixed-14, fixed-46: arm contact), steady position 7.79 ± 3.67 cm,
+  steady orientation 7.85 ± 4.46 deg; whole-hold position 13.3 ± 6.6 cm, orientation 32.5 ± 9.8 deg.
+  Circle 8/10 success (circle-02, circle-08: arm contact), tracking position 9.26 ± 2.56 cm,
+  orientation 11.2 ± 2.2 deg. The oracle does not reach the 5 mm threshold; the residual comes from the
+  unchanged PD tracking under load and clamping (inferred: the oracle commands the sampled joints exactly). It is a reference controller
+  for validation, not a performance baseline.
 
 **Runtime finding (2026-11-08):** the first B2W smoke test initialized but failed at 0.02 s on link00/link02 overlap; independent capsule geometry confirms approximately 12.5 mm penetration. The six-second standing check has not passed, no validated target manifest was generated, and no collision exemption was added. Guide/invisible collider discovery and visual-bound coverage for links without physical colliders were corrected. See `evaluation/T1_SMOKE_2026-11-08.md` for source snapshots, logs, the single-pose FK check and the required asset review. The protocol remains an unaccepted draft.
 
@@ -514,7 +550,8 @@ T1 standing task
 checklist. It produces `validation_report.json`, the seed-1101 `targets.json` sampled
 by the first evaluation repetition, `trajectories.csv`, `metrics.csv`, `config.yaml` and
 `trial_summary.csv`, retaining the underlying raw artifacts. Overall `PASS`
-requires eight executed, passing groups and finished child processes (`completion.json`; draft.7 decision C); blocked
+requires eight executed, passing groups and finished child processes (`completion.json`; draft.7 decision C); the
+evaluation children use the oracle controller. Status: **PASS 8/8** (`diag-validate-v1c-20261112T142731Z-72ac7c0a`); blocked
 or missing checks cannot pass. `--cpu-only` deliberately reports incomplete
 validation. It introduces recorded **[PROPOSED]** repeatability tolerances of
 `1e-4 m` / `1e-4 rad`; target/reference comparisons use `1e-9` in stored units.
