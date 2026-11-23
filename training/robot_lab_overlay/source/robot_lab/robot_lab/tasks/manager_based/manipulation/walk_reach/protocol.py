@@ -1,4 +1,4 @@
-"""T3 protocol constants (docs/protocols/T3_walk_and_reach_protocol.md, v0.3).
+"""T3 protocol constants (docs/protocols/T3_walk_and_reach_protocol.md, v0.4).
 
 Units: metres, radians, seconds. Quaternions wxyz. Frames: F_T (target frame: origin at base x/y and
 terrain + h_T, yaw of the base, z up), F_H (heading frame for velocities), B (base_link).
@@ -15,7 +15,7 @@ from pathlib import Path
 
 from ..reach_height import protocol as T2P
 
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 BENCHMARK = "T3-WALK-REACH"
 ROBOT_VARIANT = "B2W"
 
@@ -44,14 +44,15 @@ H_T_M = MEASURED["h_T"]
 TCP_PARENT, TCP_OFFSET_M = T2P.TCP_PARENT, T2P.TCP_OFFSET_M
 P_HOME_T = tuple(MEASURED["p_home_T"]["position"]) + tuple(MEASURED["p_home_T"]["quaternion_wxyz"])
 B_NOM = (MEASURED["b_nom"]["dh"], MEASURED["b_nom"]["pitch"], MEASURED["b_nom"]["roll"])
-BODY_BOX_T = (tuple(MEASURED["B_body_T"]["min"]), tuple(MEASURED["B_body_T"]["max"]))
+BODY_BOX_T = (tuple(MEASURED["B_body_T"]["min"]), tuple(MEASURED["B_body_T"]["max"]))   # v0.4: measured, not used
 WHEEL_CONTACT_T_XY = tuple(tuple(c[:2]) for c in MEASURED["wheels"]["contact_T"])   # FR, FL, RR, RL
 WHEEL_CENTRE_BODY = tuple(tuple(c) for c in MEASURED["wheels"]["centre_body"])
 H_KNEE_M = MEASURED["knees"]["h_knee"]
 FEASIBILITY = MEASURED["feasibility"]     # dh_axis, pitch_axis, feasible[dh][pitch] from the frozen T2 map
 
-# §3 / D5 T2 limits (design limits of the T2 map) and fall thresholds
-H_T2_MIN_M = 0.274
+# §3 / D5, D26 T2 limits and fall thresholds. v0.4: lowest base height = deepest feasible map posture
+# (dh = -0.28 m) -> 0.6039 - 0.28 = 0.324 m; h_fall = min(0.5 h_nom, h_T2_min - 0.05) = 0.274 m.
+H_T2_MIN_M = round(T2P.H_NOM_M - 0.28, 3)
 THETA_T2_MAX_RAD = 0.28
 FALL_TILT_RAD = max(1.0, THETA_T2_MAX_RAD + 0.2)
 FALL_HEIGHT_M = min(0.5 * H_NOM_M, H_T2_MIN_M - 0.05)
@@ -59,7 +60,10 @@ DEBOUNCE_STEPS = 5
 DRIFT_M = 0.30
 CONTACT_N = 1.0
 GROUND_CLEARANCE_M = 0.005
-CLEARANCE_MARGINS_M = T2P.CLEARANCE_MARGINS_M   # pool checks: T2 per-class margins
+CLEARANCE_MARGINS_M = T2P.CLEARANCE_MARGINS_M   # pool checks for M1/M3: T2 per-class margins
+# M2 (T1-derived) goals: T1's 5 mm clearance (TASK_T1 CLEARANCE_POLICY); body-body (leg) pairs keep 2 cm because
+# T1 has no moving legs and therefore no leg-pair margin of its own (D29).
+T1_CLEARANCE_MARGINS_M = dict(ground=0.005, arm_arm=0.005, arm_body=0.005, body_body=0.02)
 
 # §4 Simulation and action
 CONTROL_DT_S = 0.02
@@ -81,6 +85,7 @@ HOLD_S = (0.5, 2.0)
 STEP_FRACTION = 0.20
 ARM_SOFT_LIMIT_FACTOR = 0.9            # 5 % margin at each limit = Isaac Lab soft limits (as the T1 sampler)
 STRATIFICATION_BINS = (0.1, 0.2, 0.2)  # (l [m], pitch [rad], yaw [rad]) of the TCP position in F_T
+M3_HEIGHT_BIN_M = 0.10                 # M3 stratification by TCP height within each band (D27)
 
 # §6.3 Validity
 SEGMENT_SAMPLES = 20
@@ -118,13 +123,14 @@ T2_EVAL_SET_SHA256 = T2P.EVAL_SET_SHA256
 TRAIN_POOL_SEED = 3101   # M1 candidates + segment draws; M2 uses the T1 rule with this seed (T1 used 1101, 1102)
 EVAL_POOL_SEED = 3901    # S4 goals (disjoint from training)
 EVAL_SET_SEED = 3301
-POOL_SIZES = dict(train=dict(M1=1536, M2=768, M3=768, successors=8, max_candidates=32),
+POOL_SIZES = dict(train=dict(M1=15000, M2=7500, M3=7500, successors=8, max_candidates=32),
                   eval=dict(M1=512, M2=0, M3=0, successors=8, max_candidates=32))
 
-# Frozen artifacts (relative to repos/robot_lab/logs/t3; pinned by digest, A13)
-POOL_FILES = dict(train="diag-pool-train-20261123T122622Z-0b82b3db/artifacts/t3_pool_train.npz",
-                  eval="diag-pool-eval-20261123T122627Z-762eb62d/artifacts/t3_pool_eval.npz")
-EVAL_SET_FILE = "diag-eval-set-20261123T123507Z-ea4e9782/artifacts/t3_eval_set_v3.npz"
-TRAIN_POOL_SHA256 = "93529dbdbf3c97e640d9a0e1aa5d3cb8c00f624bb1ae7ec6aef037f578c61da5"
-EVAL_POOL_SHA256 = "58742edddd9b0a8718ff065c61ef1bb6f9a447cc6f0d186e767de44bb583b5ee"
-EVAL_SET_SHA256 = "77d5bd4e0091d3c4f9916971e249f9987c2da064231eabbbe013dd6bb36054d7"
+# Frozen artifacts (relative to repos/robot_lab/logs/t3; pinned by digest, A13). v0.4 rebuilds.
+# All artifacts (v0.3 and v0.4) are listed with path, size and SHA-256 in data/artifacts_manifest.json.
+POOL_FILES = dict(train="diag-pool-v4-train-20261123T130844Z-d65b4fdb/artifacts/t3_pool_train.npz",
+                  eval="diag-pool-v4-eval-20261123T130847Z-ff4cfa08/artifacts/t3_pool_eval.npz")
+EVAL_SET_FILE = "diag-eval-set-v4-20261123T194833Z-8ffa059e/artifacts/t3_eval_set_v4.npz"
+TRAIN_POOL_SHA256 = "6e4a18f7fc531e1cb9799efa99c0dee9f63ff9e222a766f0a3cc5118fc270c70"
+EVAL_POOL_SHA256 = "86b45c40638009b40250d92595b6f3697bfe55543c7bebf365d59f923001d911"
+EVAL_SET_SHA256 = "779f76ff769cb36684c0489d9ed3f7f6f8ced798c7eea7e8ff9c97936c8f7658"

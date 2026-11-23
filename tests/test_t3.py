@@ -1,4 +1,4 @@
-"""T3 CPU tests (protocol v0.3 §11: A1-A7, A13, A16, plus FK / pool consistency).
+"""T3 CPU tests (protocol v0.4 §11: A1-A7, A13, A16, plus FK / pool consistency).
 
 Loads the pure walk_reach modules without Isaac Lab or Gym. Synthetic tests need numpy, scipy and torch;
 asset tests need the USD SDK and hpp-fcl (Isaac image, evaluation/diagnostics/run_pytest_t3.py); data tests
@@ -65,7 +65,7 @@ def quat(rotation):
 def test_pinned_inputs():
     pinned = re.search(r'REACHABILITY_SHA256 = "([0-9a-f]{64})"', (MANIP / "reach_height/env_cfg.py").read_text()).group(1)
     assert P.T2_MAP_SHA256 == pinned
-    assert P.FALL_HEIGHT_M == pytest.approx(0.224) and P.FALL_TILT_RAD == 1.0
+    assert P.H_T2_MIN_M == pytest.approx(0.324) and P.FALL_HEIGHT_M == pytest.approx(0.274) and P.FALL_TILT_RAD == 1.0
     assert P.H_T_M > P.H_NOM_M and P.BODY_BOX_T[0][2] < -P.H_T_M < P.BODY_BOX_T[1][2]
     assert len(P.WHEEL_CONTACT_T_XY) == 4 and 0.3 < P.H_KNEE_M < 0.45
 
@@ -182,7 +182,8 @@ def _episode(k=500, offset=(0.03, 0.0, 0.0), angle=0.0999, v=(0.3, 0.0, 0.0), w=
                 base_ang_vel_w=np.tile([0, 0, w], (k, 1)), base_lin_vel_b=np.tile(v, (k, 1)),
                 base_height=np.full(k, 0.6), wheel_pos_body_xy=np.tile(np.asarray(P.WHEEL_CENTRE_BODY)[:, :2], (k, 1, 1)),
                 joint_pos=np.zeros((k, 18)), joint_limits=np.tile([-1.0, 1.0], (18, 1)), joint_vel=np.ones((k, 22)),
-                torque=np.full((k, 22), 2.0), effort_limit=np.full(22, 100.0), termination_id=None)
+                torque=np.full((k, 22), 2.0), effort_limit=np.full(22, 100.0), termination_id=None,
+                target_height=np.full(k, 0.9))
 
 
 def test_A7_metric_units():
@@ -196,12 +197,24 @@ def test_A7_metric_units():
     assert m["power_mean"] == pytest.approx(44.0) and m["torque_sat_frac"] == 0.0 and m["nominal_deviation"] == 0.0
     m = MET.episode_metrics(_episode(v=(0.0, 0.0, 0.0)), "S3", (0.3, 0.0))          # robot does not move
     assert m["e_vx_mean"] == pytest.approx(0.3, abs=1e-4) and math.isnan(m["vel_settle_time"])
-    assert m["t2_rule_success"] is True and m["n_holds_completed"] == 1
+    assert m["primary_success_rate"] == 1.0 and m["n_holds_completed"] == 1        # T2 rule: all steps <= 5 cm
     ep = _episode(k=300)
     ep.update(termination_id="F2", t_termination=6.0)
     m = MET.episode_metrics(ep, "S1", (0.3, 0.0))
     assert m["termination_class"] == "fall" and m["n_holds_completed"] == 1 and m["n_alive_steps"] == 300
+    assert m["primary_success_rate"] == 0.5                                      # T1 rule: 1 of 2 started points
+    assert MET.episode_metrics(_episode(offset=(0.06, 0, 0)), "S3", (0.3, 0.0))["primary_success_rate"] == 0.0
     assert MET.wilson(0, 64)[1] == pytest.approx(0.0566, abs=1e-4)
+    # per-height-band table: target 0.9 m -> "high"; first S1 hold moved to 0.2 m -> "low"; 1.3 m -> "outside"
+    ep = _episode()
+    ep["target_height"] = np.r_[np.full(250, 0.2), np.full(200, 0.9), np.full(50, 1.3)]
+    m = MET.episode_metrics(ep, "S1", (0.3, 0.0))
+    assert (m["holds_low"], m["holds_high"], m["holds_mid"], m["holds_outside"]) == (1, 1, 0, 0)
+    assert m["e_pos_mean_low"] == pytest.approx(0.03, abs=1e-4) and math.isnan(m["e_pos_mean_mid"])
+    rows = [dict(m, policy_seed=s) for s in (0, 1)]
+    tab = MET.aggregate(rows)["bands"]
+    assert tab["low"]["hold_success"] == 1.0 and tab["low"]["n_holds"] == 2 and tab["mid"]["n_holds"] == 0
+    assert tab["outside"]["e_ori_mean"]["mean"] == pytest.approx(0.1, abs=1e-4)
     assert MET.bootstrap_ci([0.02] * 50) == pytest.approx((0.02, 0.02))
     hid = MET.hold_ids("S1")
     assert [(hid == k).sum() for k in (0, 1)] == [100, 100] and hid[149] == -1 and hid[150] == 0 and hid[499] == 1
@@ -270,13 +283,44 @@ def test_pool_goals_match_fk_and_modes(train_pool):
     assert np.abs(p.numpy() - arrays["tcp_pos_T"]).max() < 1e-9
     counts = [int((arrays["mode"] == m).sum()) for m in (1, 2, 3)]
     assert counts == [P.POOL_SIZES["train"][k] for k in ("M1", "M2", "M3")]
-    assert meta["stats"]["segments"]["goals_without_successor"] == 0
+    n_dead = meta["stats"]["segments"]["goals_without_successor"]
+    pool = GOALS.GoalPool(arrays)
+    assert int(pool.dead_end.sum()) >= n_dead and not bool(pool.dead_end[pool.home])
+    assert not bool(pool.dead_end[pool.successors.clamp(min=0)][pool.successors >= 0].any())
+
+
+def test_dead_end_mask():
+    """Goals without a successor, and goals whose successors are all dead ends, are never drawn (D34)."""
+    arrays = _toy_pool()
+    n = len(arrays["mode"])
+    succ = np.full((n, 2), -1, dtype=np.int64)
+    succ[0] = [1, 3]; succ[1] = [2, -1]; succ[3] = [0, 1]     # 2 has no successor, so 1 becomes a dead end
+    arrays = dict(arrays, successors=succ)
+    pool = GOALS.GoalPool(arrays)
+    assert pool.dead_end[:4].tolist() == [False, True, True, False]
+    assert pool.successors[0].tolist() == [-1, 3] and pool.successors[3].tolist() == [0, -1]
+
+
+def test_sampler_rule_counters():
+    """Stranding-rule counters (v0.4) are collected and normalized per 1000 transitions."""
+    arrays = _toy_pool()
+    pool = GOALS.GoalPool(arrays)
+    gs = GOALS.GoalSampler(pool, 64, generator=torch.Generator().manual_seed(2), fk=KIN.ArmFK())
+    gs.reset(torch.arange(64))
+    gen = torch.Generator().manual_seed(3)
+    for k in range(3000):
+        moving = torch.rand(64, generator=gen) < (0.8 if (k // 150) % 2 else 0.0)
+        gs.update(P.CONTROL_DT_S, moving)
+    r = gs.rates()
+    assert r["counts"]["transitions"] > 500 and set(r["per_1000_transitions"]) == set(GOALS.COUNTERS) - {"transitions"}
+    assert r["counts"]["steps"] >= r["counts"]["rule_step_goal_only"]
+    assert abs(r["counts"]["steps"] / r["counts"]["transitions"] - P.STEP_FRACTION) < 0.08
 
 
 @needs(POOL_TRAIN)
 def test_A4_million_goals_valid(train_pool):
-    """10^6 drawn segments: checks 1-3 of §6.3 at the 20 samples (step: goal only for check 3); check 4
-    (clearance, legs) is offline per stored segment (re-checked on a subset in test_pool_segments_recheck)."""
+    """10^6 drawn segments: height checks of §6.3 at the 20 samples (step: goal only for the moving check);
+    clearance and legs are offline per stored segment (re-checked on a subset in test_pool_segments_recheck)."""
     arrays, _ = train_pool
     pool = GOALS.GoalPool(arrays)
     n_env, fk = 50_000, KIN.ArmFK()
@@ -285,7 +329,6 @@ def test_A4_million_goals_valid(train_pool):
     gen = torch.Generator().manual_seed(8)
     wheels = torch.tensor(P.WHEEL_CONTACT_T_XY)
     s = torch.linspace(0, 1, P.SEGMENT_SAMPLES)
-    lo, hi = torch.tensor(P.BODY_BOX_T[0]), torch.tensor(P.BODY_BOX_T[1])
     total, bad = 0, 0
     while total < 1_000_000:
         moving = torch.rand(n_env, generator=gen) < 0.8
@@ -299,10 +342,9 @@ def test_A4_million_goals_valid(train_pool):
         step = gs.T_traj[idx] == 0
         sent = torch.ones(len(idx), 20, dtype=torch.bool)
         sent[step, :-1] = False                                  # a step sends only its goal
-        in_box = ((p > lo) & (p < hi)).all(dim=-1)
         low = p[..., 2] + P.H_T_M < P.Z_MIN_M - 1e-6
         mv = GOALS.moving_ok_positions(p.reshape(-1, 3), wheels).reshape(len(idx), 20) | ~moving[idx, None]
-        viol = sent & (in_box | low | ~mv)
+        viol = sent & (low | ~mv)
         bad += int(viol.any(dim=1).sum())
         total += len(idx)
     assert bad == 0, f"{bad} of {total} segments violate §6.3"
@@ -340,14 +382,16 @@ def test_A16_coverage_report(train_pool):
 @usd
 @needs(POOL_TRAIN)
 def test_pool_segments_recheck(train_pool, checker):
-    """Re-check 40 random stored segments with the USD collider model (check 4 and checks 1-2)."""
+    """Re-check 40 random stored segments with the USD collider model (check 4 and checks 1-2), with the
+    margins of the source task (D28): T1 margins for M2 goals and for segments with an M2 end."""
     arrays, _ = train_pool
-    g = np.c_[arrays["q_arm"], arrays["b"]]
+    g, mode = np.c_[arrays["q_arm"], arrays["b"]], arrays["mode"]
+    m = lambda *ids: P.T1_CLEARANCE_MARGINS_M if POOL.MODE_M2 in mode[list(ids)] else P.CLEARANCE_MARGINS_M  # noqa: E731
     rng = np.random.default_rng(11)
     pairs = [(i, j) for i in rng.choice(len(g), 40, replace=False) for j in arrays["successors"][i][:1] if j >= 0]
     for i, j in pairs:
-        assert checker.point(g[i, :6], g[i, 6:]) is None
-        assert checker.segment(g[i], g[j])[0] is None
+        assert checker.point(g[i, :6], g[i, 6:], m(i)) is None
+        assert checker.segment(g[i], g[j], m(i, j))[0] is None
 
 
 # ---------------------------------------------------------------- A13 evaluation set

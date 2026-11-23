@@ -21,6 +21,7 @@ def checks(env, app, out, result, selected):
     package = "robot_lab.tasks.manager_based.manipulation.standing_ee"
     g = importlib.import_module(package + ".geometry")
     k = importlib.import_module(package + ".kinematics")
+    TR = importlib.import_module(package + ".terminations")
     robot = env.scene["robot"]
     action = env.action_manager.get_term("joints")
     cmd = env.command_manager.get_term("ee_pose")
@@ -147,17 +148,36 @@ def checks(env, app, out, result, selected):
         reset()
         root = robot.data.root_pose_w.clone()
         root[0,2] = 1.2
-        root[0,3:] = torch.tensor([np.cos(.35),np.sin(.35),0,0],device=env.device)
+        # Shared termination set (T3 D6/D20): roll 1.2 rad > 1.0 rad must terminate on the 5th step only.
+        root[0,3:] = torch.tensor([np.cos(.6),np.sin(.6),0,0],device=env.device)
         robot.write_root_pose_to_sim(root)
         env.sim.forward(); env.scene.update(env.physics_dt)
+        for n in range(TR.DEBOUNCE_STEPS - 1):
+            require(not step("fall_tilt")[0]["failure"], f"Tilt terminated before the debounce ({n+1} steps)")
         rows = step("fall_tilt")
         require("fall_tilt" in rows[0]["failure_reason"] and rows[0]["terminated"] and not rows[0]["truncated"], "Fall label/flags incorrect")
         require(rows[0]["base_pos_world_xyz"][2] > .9 and robot.data.root_pos_w[0,2] < .7,
                 "Terminal state was contaminated by automatic reset")
         reset()
-        root = robot.data.root_pose_w.clone(); root[0,2] = .1
-        robot.write_root_pose_to_sim(root); env.sim.forward(); env.scene.update(env.physics_dt)
-        require("fall_height" in step("fall_height")[0]["failure_reason"],"Height failure missing")
+        # Cached-state injection (no physics): base 0.2 m < 0.274 m for 5 evaluations, then 0.31 m x/y drift.
+        with torch.inference_mode():       # the cached buffers are inference tensors
+            pos = robot.data.root_pos_w
+            before = pos[0].clone()
+            try:
+                for n in range(TR.DEBOUNCE_STEPS):
+                    pos[0,2] = env.scene.env_origins[0,2] + .2
+                    require(abs(float(robot.data.root_pos_w[0,2]-env.scene.env_origins[0,2]) - .2) < 1e-6,
+                            "Cached height injection failed")
+                    monitor(env)
+                    require(("fall_height" in monitor.reasons[0]) == (n == TR.DEBOUNCE_STEPS - 1),
+                            f"Height debounce incorrect at evaluation {n+1}: {monitor.reasons[0]}")
+                pos[0] = before
+                pos[0,0] += TR.DRIFT_M + .01
+                monitor(env)
+                require("standing_drift" in monitor.reasons[0] and not monitor.reasons[1],
+                        f"Standing drift missing: {monitor.reasons}")
+            finally:
+                pos[0] = before
         reset()
         # A separate kinematic cube physically contacts the arm; no fake force history.
         obstacle = env.scene["validation_obstacle"]
@@ -180,7 +200,7 @@ def checks(env, app, out, result, selected):
         require(env.episode_length_buf.tolist() == [101,0],"Asynchronous reset changed surviving episode clock")
         for field in ("foot_contact_forces","foot_drift_m","base_height_m","tilt_rad"):
             require(rows[0][field] is not None and np.isfinite(rows[0][field]).all(), f"Missing standing diagnostic: {field}")
-        return dict(fall_tilt="PASS",fall_height="PASS",physical_arm_collision="PASS",invalid_cached_state="PASS",
+        return dict(fall_tilt="PASS",fall_height="PASS",standing_drift="PASS",physical_arm_collision="PASS",invalid_cached_state="PASS",
                     normal_timeout="PASS",pre_reset_terminal_capture="PASS",asynchronous_reset="PASS")
 
     # draft.7: fault checks first; the FK teleport check (arbitrary root/arm states) runs last.

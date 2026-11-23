@@ -9,15 +9,19 @@ from isaaclab.utils import configclass
 from isaaclab.utils.math import euler_xyz_from_quat, subtract_frame_transforms
 
 from .geometry import pose, pose_error, reference, steady_state, transform
+from . import terminations as TR
 
 LEGS = [f"{leg}_{joint}_joint" for leg in ("FR", "FL", "RR", "RL") for joint in ("hip", "thigh", "calf")]
 WHEELS = [f"{leg}_foot_joint" for leg in ("FR", "FL", "RR", "RL")]
 ARM = [f"joint{i}" for i in range(1, 7)]
 JOINTS = LEGS + WHEELS + ARM
+# Shared T1/T2/T3 action interface (T3 protocol D1, D22): wheel channels are velocity targets a_w * s_w.
+WHEEL_ACTION_SCALE_RAD_S = 10.0
 
 
 class StandingAction(ActionTerm):
-    """Radians relative to nominal pose; four wheel channels are forced to zero."""
+    """Radians relative to nominal pose (18 position channels); four wheel channels are velocity targets
+    a_w * WHEEL_ACTION_SCALE_RAD_S (rad/s). Zero wheel action = 0 rad/s, as before (T3 D1, D22)."""
 
     def __init__(self, cfg, env):
         super().__init__(cfg, env)
@@ -47,12 +51,12 @@ class StandingAction(ActionTerm):
 
     def process_actions(self, actions):
         if actions.shape != self._raw.shape or not bool(torch.isfinite(actions).all()):
-            raise ValueError("T1 actions must be finite [num_envs, 22] nominal offsets in radians")
+            raise ValueError("T1 actions must be finite [num_envs, 22]: nominal offsets in radians, wheel velocity commands")
         self._raw[:] = actions
         limits = self._asset.data.soft_joint_pos_limits[:, self.joint_ids]
         targets = self._asset.data.default_joint_pos[:, self.joint_ids] + actions
         self._processed[:] = targets.clamp(limits[..., 0], limits[..., 1])
-        self._processed[:, 12:16] = 0.0
+        self._processed[:, 12:16] = actions[:, 12:16] * WHEEL_ACTION_SCALE_RAD_S
 
     def apply_actions(self):
         targets = torch.cat([self._processed[:, :12], self._processed[:, 16:]], dim=1)
@@ -176,12 +180,19 @@ class StandingFailure(ManagerTermBase):
         self.reasons = [[] for _ in range(env.num_envs)]
         self.diagnostics = [{} for _ in range(env.num_envs)]
         self.self_clearance_episode = [{} for _ in range(env.num_envs)]  # per-episode counts, monitor only
+        # Shared termination set (T3 protocol D6, D20): debounce counters for F2/F3, drift latch for D.
+        self.tilt_steps = np.zeros(env.num_envs, dtype=np.int64)
+        self.height_steps = np.zeros(env.num_envs, dtype=np.int64)
+        self.drift_latch = torch.zeros(env.num_envs, 2, device=env.device)
+        self.drift_latched = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
 
     def reset(self, env_ids=None):
         ids = range(len(self.self_clearance_episode)) if env_ids is None else \
             (env_ids.tolist() if hasattr(env_ids, "tolist") else list(env_ids))
         for i in ids:
             self.self_clearance_episode[i] = {}
+            self.tilt_steps[i] = self.height_steps[i] = 0
+            self.drift_latched[i] = False
 
     def _count_self_clearance(self, i, rows):
         counts = self.self_clearance_episode[i]
@@ -197,8 +208,8 @@ class StandingFailure(ManagerTermBase):
                 c["min_clearance_m"] = row["clearance_m"]
         return {k: dict(v) for k, v in counts.items()}
 
-    def __call__(self, env, min_height_fraction=0.55, max_tilt_rad=0.5, contact_force_n=1.0,
-                 enforce_stance=False):
+    def __call__(self, env, min_height_m=TR.FALL_HEIGHT_M, max_tilt_rad=TR.FALL_TILT_RAD, contact_force_n=1.0,
+                 enforce_stance=False, debounce_steps=TR.DEBOUNCE_STEPS, drift_m=TR.DRIFT_M):
         cmd, robot = env.command_manager.get_term("ee_pose"), env.scene["robot"]
         d = robot.data
         if self.model is None:
@@ -207,6 +218,10 @@ class StandingFailure(ManagerTermBase):
             self.model = UsdArmKinematics(omni.usd.get_context().get_stage(), "/World/envs/env_0/Robot")
         contact = env.scene["contacts"].data.net_forces_w_history.norm(dim=-1).amax(dim=1).cpu().numpy()
         sensor_names = env.scene["contacts"].body_names
+        # T1 has no velocity command: every step is standing (D latch = position at the first step after reset).
+        drift_hit = TR.drift_update(self.drift_latch, self.drift_latched,
+                                    torch.ones(env.num_envs, dtype=torch.bool, device=env.device),
+                                    d.root_pos_w[:, :2], drift_m).tolist()
         results = []
         for i in range(env.num_envs):
             reasons = []
@@ -224,10 +239,6 @@ class StandingFailure(ManagerTermBase):
                 cmd.evaluate(i)
                 base = d.root_pos_w[i].cpu().numpy()
                 height = float(base[2] - env.scene.env_origins[i, 2].item())
-                initial_height = cmd.initial_base[i][2] - env.scene.env_origins[i, 2].item()
-                # During settling use spawn height, not the descending instantaneous height.
-                if float(env.episode_length_buf[i])*env.step_dt <= 2.0:
-                    initial_height = robot.cfg.init_state.pos[2]
                 tilt = float(torch.acos((-d.projected_gravity_b[i, 2]).clamp(-1, 1)))
                 drift = np.linalg.norm(d.body_pos_w[i, cmd.foot_ids, :2].cpu().numpy() - cmd.initial_feet[i][:, :2], axis=1)
                 foot_contact = [bool(contact[i, sensor_names.index(robot.body_names[j])] > contact_force_n)
@@ -239,10 +250,14 @@ class StandingFailure(ManagerTermBase):
                 angles = euler_xyz_from_quat(d.root_quat_w[i:i+1])[:2]
                 roll_pitch = [float(torch.atan2(a.sin(), a.cos())[0]) for a in angles]
                 stance = bool(max(drift) > 0.05 or not all(foot_contact) or max(abs(wheels)) > 0.05)
-                if height < min_height_fraction * initial_height:
+                self.height_steps[i], fell_height = TR.debounce(self.height_steps[i], height < min_height_m, debounce_steps)
+                self.tilt_steps[i], fell_tilt = TR.debounce(self.tilt_steps[i], tilt > max_tilt_rad, debounce_steps)
+                if fell_height:
                     reasons.append("fall_height")
-                if tilt > max_tilt_rad:
+                if fell_tilt:
                     reasons.append("fall_tilt")
+                if drift_hit[i]:
+                    reasons.append("standing_drift")
                 if any(force > contact_force_n and not name.endswith("_foot")
                        for force, name in zip(contact[i], sensor_names)):
                     reasons.append("collision_contact")
@@ -267,7 +282,7 @@ class StandingFailure(ManagerTermBase):
                             base_xy_displacement_m=float(np.linalg.norm(base[:2] - cmd.initial_base[i][:2])),
                             foot_contact_flags=foot_contact, wheel_rotation_rad=wheels.tolist(),
                             wheel_travel_rad=cmd.wheel_travel[i].tolist(), base_roll_pitch_rad=roll_pitch,
-                            standing_violation=stance, min_height_m=min_height_fraction*initial_height,
+                            standing_violation=stance, min_height_m=min_height_m,
                             collision_geometry=geometry_report, self_clearance=self_rows,
                             self_clearance_episode=episode_counts)
             self.reasons[i], self.diagnostics[i] = reasons, diag

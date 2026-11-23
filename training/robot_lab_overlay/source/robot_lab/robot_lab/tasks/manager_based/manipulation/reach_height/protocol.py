@@ -9,7 +9,7 @@ import numpy as np
 
 from ..standing_ee.protocol import NOMINAL_BASE_POSITION_XYZ
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"   # 1.1.0 (2026-11-23): wheel channel a_w*s_w, shared termination set (T3 D6/D20/D22)
 BENCHMARK = "T2-REACH-LOW-HIGH"
 ROBOT_VARIANT = "B2W"
 

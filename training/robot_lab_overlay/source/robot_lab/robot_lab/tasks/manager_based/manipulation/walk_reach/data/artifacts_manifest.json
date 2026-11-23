@@ -24,6 +24,24 @@
    "path": "diag-measure-20261123T121813Z-2df42c5d/artifacts/t3_measurements.json",
    "size_bytes": 17929,
    "file_sha256": "7952d3b15f5be05c1f1014231f25bb7834415fe010fc85085780ce4201d1159b"
+  },
+  "train_pool_v04": {
+   "path": "diag-pool-v4-train-20261123T130844Z-d65b4fdb/artifacts/t3_pool_train.npz",
+   "size_bytes": 3923288,
+   "file_sha256": "bfeadecc9b626cdd91917b07c59bb352e0769800dccf656cf27be0144c963aaf",
+   "digest_sha256": "6e4a18f7fc531e1cb9799efa99c0dee9f63ff9e222a766f0a3cc5118fc270c70"
+  },
+  "eval_pool_v04": {
+   "path": "diag-pool-v4-eval-20261123T130847Z-ff4cfa08/artifacts/t3_pool_eval.npz",
+   "size_bytes": 71353,
+   "file_sha256": "5ecf31c874dbdb6c091ce9453009fe7bb954158e06f926f4fb3f1040dd5f6bdd",
+   "digest_sha256": "86b45c40638009b40250d92595b6f3697bfe55543c7bebf365d59f923001d911"
+  },
+  "eval_set_v04": {
+   "path": "diag-eval-set-v4-20261123T194833Z-8ffa059e/artifacts/t3_eval_set_v4.npz",
+   "size_bytes": 100025,
+   "file_sha256": "f98cc2ed794f5d693fe465518f6fb28c6cb4450d1c8ba8ec2157fe9301cb0f9a",
+   "digest_sha256": "779f76ff769cb36684c0489d9ed3f7f6f8ced798c7eea7e8ff9c97936c8f7658"
   }
  }
 }

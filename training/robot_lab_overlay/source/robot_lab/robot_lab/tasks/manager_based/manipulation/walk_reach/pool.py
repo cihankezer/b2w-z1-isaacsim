@@ -4,8 +4,10 @@ Not an IK reachability bank (D4): every goal is a forward-kinematics sample g = 
 pose is FK(g). Each goal and each stored segment g_i -> g_j is checked offline at all SEGMENT_SAMPLES
 joint-space interpolation points (s = k / (SEGMENT_SAMPLES - 1)):
   legs: T2 leg IK with the wheel centres fixed, within soft limits (base offset b);
-  clearance: T2 per-class margins (ground 5 mm, arm-arm 5 mm, arm-body 2 cm, body-body 2 cm; unresolved fails);
-  TCP: outside B_body and >= Z_MIN_M above the terrain.
+  clearance (v0.4, inherited from the source task): M1/M3 T2 per-class margins (ground 5 mm, arm-arm 5 mm,
+  arm-body 2 cm, body-body 2 cm); M2 (T1-derived) T1 margins (5 mm; body-body 2 cm, legs move with b);
+  a segment uses T1 margins if either end is an M2 goal; unresolved geometry fails;
+  TCP: >= Z_MIN_M above the terrain. No body box (v0.4: goals are checked with the real colliders).
 Velocity-dependent checks (§6.3 check 3) are done online (goals.py).
 
 Goal modes: 0 = home (nominal state, index 0), 1 = M1 random reach, 2 = M2 T1 rule, 3 = M3 T2 voxel.
@@ -71,7 +73,6 @@ class Checker:
         self.F = self.wb.G.copy()
         self.F[2, 3] = P.H_T_M
         self.F_inv = np.linalg.inv(self.F)
-        self.box = np.asarray(P.BODY_BOX_T)
 
     def base(self, b):
         return self.W.base_pose(self.wb.G, P.H_NOM_M + b[0], b[1], b[2])
@@ -82,7 +83,7 @@ class Checker:
         frames = self.model.forward(self.base(b), joints)
         return self.F_inv @ frames[P.TCP_PARENT] @ self.wb.tcp
 
-    def point(self, q, b):
+    def point(self, q, b, margins=P.CLEARANCE_MARGINS_M):
         """None if valid, else a rejection reason."""
         base = self.base(b)
         legs, reason = self.wb.solve_legs(base)
@@ -91,27 +92,31 @@ class Checker:
         frames = self.model.forward(base, self.W.full_joints(dict(self.wb.joints_nominal, **legs), q))
         tcp = self.F_inv @ frames[P.TCP_PARENT] @ self.wb.tcp
         reason = target_reason(tcp[:3, 3][None])[0]
-        return reason or self.W.clearance_violation(self.model, frames, P.CLEARANCE_MARGINS_M)
+        return reason or self.W.clearance_violation(self.model, frames, margins)
 
-    def segment(self, ga, gb):
+    def segment(self, ga, gb, margins=P.CLEARANCE_MARGINS_M):
         """Check interior points of the joint-space segment ga -> gb (endpoints are checked goals).
         Midpoint-first order to fail fast. Returns (None | reason, points checked)."""
         k = P.SEGMENT_SAMPLES - 1
         order = sorted(range(1, k), key=lambda i: abs(i - k / 2))
         for n, i in enumerate(order, 1):
             g = ga + (i / k) * (gb - ga)
-            reason = self.point(g[:6], g[6:])
+            reason = self.point(g[:6], g[6:], margins)
             if reason:
                 return f"s={i}/{k}:{reason}", n
         return None, len(order)
 
 
 def target_reason(p_T):
-    """Offline TCP checks 1-2 of §6.3 for positions in F_T (N, 3): None or reason per point (flat terrain)."""
-    lo, hi = np.asarray(P.BODY_BOX_T)
-    inside = np.all((p_T > lo) & (p_T < hi), axis=1)
+    """Offline TCP check of §6.3 (v0.4: height only) for positions in F_T (N, 3): None or reason per point."""
     low = p_T[:, 2] + P.H_T_M < P.Z_MIN_M
-    return [("tcp_in_body_box" if a else "tcp_below_z_min" if b else None) for a, b in zip(inside, low)]
+    return ["tcp_below_z_min" if b else None for b in low]
+
+
+def height_histogram(z_world, width=P.M3_HEIGHT_BIN_M, top=1.6):
+    edges = np.arange(0.0, top + 1e-9, width)
+    h, _ = np.histogram(z_world, bins=edges)
+    return {f"{a:.1f}-{b:.1f}": int(c) for a, b, c in zip(edges[:-1], edges[1:], h)}
 
 
 # ---------------------------------------------------------------- stratification and coverage (§6.2 step 4, §6.4)
@@ -169,7 +174,7 @@ def _t1_task(items):
     out = []
     for q in items:
         _, reason = check(c.model, c.wb.base_nominal, c.wb.joints_nominal, q)
-        out.append("t1_rule:" + reason if reason else c.point(q, np.asarray(P.B_NOM)))
+        out.append("t1_rule:" + reason if reason else c.point(q, np.asarray(P.B_NOM), P.T1_CLEARANCE_MARGINS_M))
     return out
 
 
@@ -177,9 +182,9 @@ def _segment_task(args):
     c = _STATE["checker"]
     i, ga, candidates, successors = args
     kept, tried, rejected, points = [], 0, {}, 0
-    for j, gb in candidates:
+    for j, gb, margins in candidates:
         tried += 1
-        reason, n = c.segment(ga, gb)
+        reason, n = c.segment(ga, gb, margins)
         points += n
         if reason:
             key = reason.split(":", 1)[1].split(":")[0]
@@ -259,7 +264,8 @@ def build(model, reach_set, seed, sizes, workers=8, log=print, oversample=4):
             modes += [MODE_M2] * len(kept); bands += [-1] * len(kept); sources += [k[0] for k in kept]
             log(f"M2: {len(kept)} kept of {tried} ({time.time() - t0:.0f} s)")
         # M3: T2 sampling-set voxels (largest region, centre azimuth within the sector), stored posture + arm pose,
-        # equal count per band; TCP pose = FK of the stored posture.
+        # equal count per band, stratified round-robin over 0.10 m height bins within each band (v0.4, A5);
+        # TCP pose = FK of the stored posture.
         if sizes["M3"]:
             raw = reach_set.raw
             theta = np.arctan2(reach_set.centres[:, 1], reach_set.centres[:, 0])
@@ -269,16 +275,34 @@ def build(model, reach_set, seed, sizes, workers=8, log=print, oversample=4):
             n_b = sizes["M3"] // 3
             chosen, checked, reasons_all, valid_per_band = [], [], [], []
             for k in range(3):
-                order, kept_k, start = rng.permutation(per_band[k]), [], 0
-                while len(kept_k) < n_b and start < len(order):       # check random voxels until n_b are valid
-                    batch = order[start:start + max(2 * (n_b - len(kept_k)), 8 * workers)]
+                z = reach_set.centres[per_band[k], 2]
+                hb = np.floor(z / P.M3_HEIGHT_BIN_M + 1e-9).astype(int)
+                queues = [list(rng.permutation(per_band[k][hb == h])) for h in np.unique(hb)]
+                kept_bins = [[] for _ in queues]
+                start = 0
+                while sum(map(len, kept_bins)) < n_b and any(queues):
+                    # round-robin: each open bin offers voxels in proportion to its remaining deficit
+                    need = n_b - sum(map(len, kept_bins))
+                    open_ = [i for i, q in enumerate(queues) if q]
+                    share = max(1, -(-2 * need // len(open_)))
+                    batch, owner = [], []
+                    for i in open_:
+                        take = [queues[i].pop() for _ in range(min(share, len(queues[i])))]
+                        batch += take; owner += [i] * len(take)
                     start += len(batch)
                     reasons = _parallel(pool, _point_task, [(raw["arm_q"][v], gb_all[v]) for v in batch], workers)
                     reasons_all += reasons
                     checked += list(batch)
-                    kept_k += [v for v, r in zip(batch, reasons) if r is None]
-                valid_per_band.append((len(kept_k), start))
-                chosen += kept_k[:n_b]
+                    for v, i, r in zip(batch, owner, reasons):
+                        if r is None:
+                            kept_bins[i].append(v)
+                pick = []                                              # equal count per bin, capped by availability
+                while len(pick) < n_b and any(kept_bins):
+                    for kb in kept_bins:
+                        if kb and len(pick) < n_b:
+                            pick.append(kb.pop(0))
+                valid_per_band.append((len(pick), start))
+                chosen += pick
             valid = [v for v, r in zip(checked, reasons_all) if r is None]
             cand = checked
             stats["M3"] = dict(candidates=len(cand), valid=len(valid), rejections=_count(reasons_all),
@@ -298,7 +322,9 @@ def build(model, reach_set, seed, sizes, workers=8, log=print, oversample=4):
         for i in range(len(g)):
             ms = rng.choice(list(by_mode), size=sizes["max_candidates"], p=weights)
             cands = dict.fromkeys(int(rng.choice(by_mode[m])) for m in ms)
-            tasks.append((i, g[i], [(j, g[j]) for j in cands if j != i], sizes["successors"]))
+            margins = lambda j: (P.T1_CLEARANCE_MARGINS_M if MODE_M2 in (modes[i], modes[j])  # noqa: E731
+                                 else P.CLEARANCE_MARGINS_M)
+            tasks.append((i, g[i], [(j, g[j], margins(j)) for j in cands if j != i], sizes["successors"]))
         succ = np.full((len(g), sizes["successors"]), -1, dtype=np.int64)
         seg = dict(tried=0, rejected={}, points=0)
         for done, (i, kept, tried, rejected, points) in enumerate(pool.imap_unordered(_segment_task, tasks, chunksize=4), 1):
@@ -319,9 +345,15 @@ def build(model, reach_set, seed, sizes, workers=8, log=print, oversample=4):
     arrays = dict(q_arm=g[:, :6], b=g[:, 6:], mode=modes, band=np.array(bands), source=np.array(sources),
                   successors=succ, tcp_pos_T=tcp[:, :3, 3], tcp_quat_T=quat)
     stats["coverage_vbc"] = coverage(arrays["tcp_pos_T"][modes != MODE_HOME])
+    z_world = arrays["tcp_pos_T"][:, 2] + P.H_T_M
+    stats["height_histogram"] = {name: height_histogram(z_world[modes == m])
+                                 for name, m in (("M1", MODE_M1), ("M2", MODE_M2), ("M3", MODE_M3)) if (modes == m).any()}
+    m1 = modes == MODE_M1
+    stats["M1_below_moving_min"] = dict(n=int((z_world[m1] < P.Z_MIN_MOVING_M).sum()), of=int(m1.sum()))
     stats["build_s"] = time.time() - t0
     meta = dict(benchmark=P.BENCHMARK, protocol_version=P.VERSION, seed=int(seed), sizes=sizes,
                 segment_samples=P.SEGMENT_SAMPLES, clearance_margins_m=P.CLEARANCE_MARGINS_M,
+                t1_clearance_margins_m=P.T1_CLEARANCE_MARGINS_M, m3_height_bin_m=P.M3_HEIGHT_BIN_M,
                 asset_tree_sha256=P.ASSET_TREE_SHA256, t2_map_sha256=P.T2_MAP_SHA256,
                 measurements_sha256=P.MEASUREMENTS_SHA256, stats=stats)
     meta["pool_sha256"] = digest(arrays)

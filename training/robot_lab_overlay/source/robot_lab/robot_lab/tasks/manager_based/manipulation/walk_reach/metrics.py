@@ -7,10 +7,13 @@ test-phase steps. Hold windows come from the scenario schedule (inherited from T
 
 import numpy as np
 
+from ..reach_height import protocol as T2P
 from . import protocol as P
 
 TERMINATION_CLASS = {"F1": "fall", "F2": "fall", "F3": "fall", "S1": "safety", "S2": "safety", "S3": "safety",
                      "D": "drift", None: "none"}
+# Per-height-band reporting (v0.5): T2's bands by target height above the terrain; targets outside [0, 1.10] m.
+BAND_NAMES = T2P.BAND_NAMES + ("outside",)
 
 
 # ---------------------------------------------------------------- per-step errors
@@ -98,9 +101,10 @@ def episode_metrics(ep, scenario, cmd, dt=P.CONTROL_DT_S, test_s=P.TEST_S):
     tcp_pos_w, tcp_quat_w, target_pos_w, target_quat_w (K,3/4); tcp_pos_T, target_pos_T (K,3);
     base_quat_w (K,4), base_lin_vel_w, base_ang_vel_w, base_lin_vel_b (K,3); base_height (K,);
     wheel_pos_body_xy (K,4,2); joint_pos (K,J), joint_limits (J,2) [non-wheel joints];
-    joint_vel, torque (K,A), effort_limit (A,) [all actuated joints];
+    joint_vel, torque (K,A), effort_limit (A,) [all actuated joints]; target_height (K,) above the terrain;
     termination_id (None | F1..F3 | S1..S3 | D), t_termination (s after test start or NaN)."""
     k = len(ep["tcp_pos_w"])
+    tid = ep.get("termination_id")
     n_max = int(round(test_s / dt))
     e_pos = position_error(ep["tcp_pos_w"], ep["target_pos_w"])
     e_ori = geodesic(ep["tcp_quat_w"], ep["target_quat_w"])
@@ -111,6 +115,13 @@ def episode_metrics(ep, scenario, cmd, dt=P.CONTROL_DT_S, test_s=P.TEST_S):
     nan = float("nan")
     mean = lambda x, m=None: float(np.mean(x if m is None else x[m])) if (k if m is None else int(np.sum(m))) else nan  # noqa: E731
 
+    band = T2P.band_index(np.asarray(ep["target_height"], float))   # (K,), -1 = outside
+    per_band = {}
+    for i, name in enumerate(BAND_NAMES):
+        m = band == (i if i < len(T2P.BAND_NAMES) else -1)
+        per_band.update({f"e_pos_mean_{name}": mean(e_pos, m), f"e_ori_mean_{name}": mean(e_ori, m),
+                         f"holds_{name}": 0, f"holds_ok_{name}": 0})
+
     holds, hold_pos, hold_ori = [], [], []
     full = hold_ids(scenario, dt, test_s)
     for h in range(full.max() + 1):
@@ -120,10 +131,21 @@ def episode_metrics(ep, scenario, cmd, dt=P.CONTROL_DT_S, test_s=P.TEST_S):
             holds.append(mp <= P.SUCCESS_POSITION_M and mo <= P.SUCCESS_ORIENTATION_RAD)
             hold_pos.append(mp)
             hold_ori.append(mo)
+            name = BAND_NAMES[band[idx[0]]]   # the target is fixed during a hold; -1 indexes "outside"
+            per_band[f"holds_{name}"] += 1
+            per_band[f"holds_ok_{name}"] += int(holds[-1])
     first_hold = np.flatnonzero(full == 0)
-    t2_success = None
-    if scenario == "S3" and len(holds):       # T2's own rule (every scored step <= 5 cm), secondary
-        t2_success = bool(np.all(e_pos[full == 0] <= P.SUCCESS_POSITION_M))
+    # Primary success = source task's rule (D28). T1 (S1): a started point succeeds if it completes without a
+    # termination (TASK_T1 summarize: success = completed without failure / started). T2 (S3): the episode
+    # completes and every scored step is within 5 cm (position only; terminated = failure).
+    if scenario == "S1":
+        per = int(round(P.S1_SCHEDULE["hold_s"] / dt))
+        started = [j for j in range(P.S1_SCHEDULE["points"]) if j * per < k or j == 0]
+        primary = float(np.mean([(j + 1) * per <= k for j in started]))
+    elif scenario == "S3":
+        primary = float(k >= n_max and tid is None and bool(np.all(e_pos[full == 0] <= P.SUCCESS_POSITION_M)))
+    else:
+        primary = nan
 
     q, lim = np.asarray(ep["joint_pos"], float), np.asarray(ep["joint_limits"], float)
     band = P.JOINT_LIMIT_FRACTION * (lim[:, 1] - lim[:, 0])
@@ -134,7 +156,6 @@ def episode_metrics(ep, scenario, cmd, dt=P.CONTROL_DT_S, test_s=P.TEST_S):
                                axis=2).sum(axis=1)
     tl = tilt(ep["base_quat_w"])
     h = np.asarray(ep["base_height"], float)
-    tid = ep.get("termination_id")
     return dict(
         termination_class=TERMINATION_CLASS[tid], termination_id=tid or "",
         t_termination=float(ep.get("t_termination", nan)) if tid else nan,
@@ -143,10 +164,10 @@ def episode_metrics(ep, scenario, cmd, dt=P.CONTROL_DT_S, test_s=P.TEST_S):
         e_pos_mean_hold=float(np.mean(hold_pos)) if hold_pos else nan,
         e_ori_mean_all=mean(e_ori), e_ori_mean_hold=float(np.mean(hold_ori)) if hold_ori else nan,
         e_frob_mean_all=mean(frobenius(ep["tcp_quat_w"], ep["target_quat_w"])),
+        primary_success_rate=primary,
         hold_success_rate=float(np.mean(holds)) if holds else nan, n_holds_completed=len(holds),
         e_pos_mean_first_hold=float(e_pos[first_hold].mean()) if len(first_hold) and first_hold[-1] < k else nan,
         e_ori_mean_first_hold=float(e_ori[first_hold].mean()) if len(first_hold) and first_hold[-1] < k else nan,
-        t2_rule_success=t2_success,
         e_vx_mean=mean(e_vx, steady), e_vy_mean=mean(e_vy, steady), e_w_mean=mean(e_w, steady),
         vel_settle_time=settle_time(e_vx, e_w, dt),
         base_h_mean=mean(h), base_h_min=float(h.min()) if k else nan,
@@ -155,7 +176,7 @@ def episode_metrics(ep, scenario, cmd, dt=P.CONTROL_DT_S, test_s=P.TEST_S):
         joint_limit_frac=mean(near.astype(float)), torque_sat_frac=mean(sat.astype(float)),
         power_mean=mean(np.abs(tau * qd).sum(axis=1)),
         legacy_ee_sphere_l1=mean(legacy_ee_sphere_l1(ep["tcp_pos_T"], ep["target_pos_T"])),
-        legacy_vx_l1=mean(np.abs(np.asarray(ep["base_lin_vel_b"], float)[:, 0] - cmd[0])))
+        legacy_vx_l1=mean(np.abs(np.asarray(ep["base_lin_vel_b"], float)[:, 0] - cmd[0])), **per_band)
 
 
 # ---------------------------------------------------------------- aggregation (§9)
@@ -193,15 +214,34 @@ def termination_rates(rows):
     return out
 
 
-PRIMARY = ("e_pos_mean_all", "e_pos_mean_hold", "e_ori_mean_all", "e_ori_mean_hold", "hold_success_rate",
+PRIMARY = ("e_pos_mean_all", "e_pos_mean_hold", "e_ori_mean_all", "e_ori_mean_hold", "primary_success_rate",
+           "hold_success_rate",
            "e_vx_mean", "e_w_mean")
+
+
+def band_table(rows):
+    """Per T2 height band: e_pos and e_ori (per-seed mean of episode band means, then mean +- std over seeds)
+    and hold success pooled over holds with a Wilson 95 % interval."""
+    seeds = sorted({r["policy_seed"] for r in rows})
+    out = {}
+    for name in BAND_NAMES:
+        e = {}
+        for key in ("e_pos_mean", "e_ori_mean"):
+            per_seed = [np.nanmean([r[f"{key}_{name}"] for r in rows if r["policy_seed"] == s]
+                                   or [float("nan")]) for s in seeds]
+            e[key] = dict(mean=float(np.nanmean(per_seed)) if np.isfinite(per_seed).any() else float("nan"),
+                          std=float(np.nanstd(per_seed, ddof=1)) if np.isfinite(per_seed).sum() > 1 else float("nan"))
+        n, ok = sum(r[f"holds_{name}"] for r in rows), sum(r[f"holds_ok_{name}"] for r in rows)
+        out[name] = dict(**e, hold_success=ok / n if n else float("nan"), wilson95=wilson(ok, n), n_holds=n)
+    return out
 
 
 def aggregate(rows, keys=PRIMARY, seed=0):
     """Per method: per policy seed mean over episodes, then mean +- std (ddof 1) over seeds; bootstrap CI
-    over all episodes; termination rates pooled over episodes."""
+    over all episodes; termination rates pooled over episodes; per-height-band table."""
     seeds = sorted({r["policy_seed"] for r in rows})
-    out = dict(n_episodes=len(rows), n_seeds=len(seeds), termination=termination_rates(rows), metrics={})
+    out = dict(n_episodes=len(rows), n_seeds=len(seeds), termination=termination_rates(rows), metrics={},
+               bands=band_table(rows))
     for key in keys:
         per_seed = [np.nanmean([r[key] for r in rows if r["policy_seed"] == s]) for s in seeds]
         out["metrics"][key] = dict(mean=float(np.mean(per_seed)),

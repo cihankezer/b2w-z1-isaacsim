@@ -39,6 +39,7 @@ T1_ROBOT_CFG = UNITREE_B2W_Z1_STANDING_CFG.replace(
 )
 from .runtime import (JOINTS, StandingActionCfg, StandingCommandCfg, StandingFailure,
                       StepRecorder, measured_ee, time_out, zero_velocity_goal)
+from .terminations import DEBOUNCE_STEPS, DRIFT_M, FALL_HEIGHT_M, FALL_TILT_RAD
 
 
 @configclass
@@ -98,8 +99,8 @@ class EventsCfg:
 @configclass
 class TerminationsCfg:
     failure = TerminationTermCfg(func=StandingFailure, params={
-        "min_height_fraction": 0.55, "max_tilt_rad": 0.5, "contact_force_n": 1.0,
-        "enforce_stance": False})
+        "min_height_m": FALL_HEIGHT_M, "max_tilt_rad": FALL_TILT_RAD, "contact_force_n": 1.0,
+        "enforce_stance": False, "debounce_steps": DEBOUNCE_STEPS, "drift_m": DRIFT_M})
     time_out = TerminationTermCfg(func=time_out, time_out=True)
 
 

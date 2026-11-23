@@ -28,23 +28,41 @@ class GoalPool:
         self.g = torch.cat([t(arrays["q_arm"]), t(arrays["b"])], dim=1)       # (N, 9)
         self.mode = t(arrays["mode"], torch.long)                              # 0 home, 1 M1, 2 M2, 3 M3
         self.successors = t(arrays["successors"], torch.long)                  # (N, K), -1 = none
+        # Dead-end mask (protocol v0.5 D34): a goal without a stored successor is never drawn. Repeated until no
+        # goal is left whose successors are all masked; the pool file is unchanged.
+        self.dead_end = torch.zeros(len(self.mode), dtype=torch.bool, device=device)
+        while True:
+            valid = (self.successors >= 0) & ~self.dead_end[self.successors.clamp(min=0)]
+            dead = ~valid.any(dim=1)
+            if bool((dead == self.dead_end).all()):
+                break
+            self.dead_end = dead
+        self.successors = torch.where(valid, self.successors, torch.full_like(self.successors, -1))
+        assert not bool(self.dead_end[0]), "home node is a dead end"
         self.succ_mode = torch.where(self.successors >= 0, self.mode[self.successors.clamp(min=0)],
                                      torch.full_like(self.successors, -1))
         self.home = 0
         self.device = device
 
 
-def moving_ok_positions(p_T, wheels_xy, h_knee=P.H_KNEE_M):
-    """§6.3 check 3 for TCP positions in F_T (N, 3) on flat terrain: True where valid while moving."""
+def moving_ok_positions(p_T, wheels_xy, h_knee=P.H_KNEE_M, parts=False):
+    """§6.3 check 3 for TCP positions in F_T (N, 3) on flat terrain: True where valid while moving.
+    parts=True also returns (height_ok, wheel_ok)."""
     z_world = p_T[:, 2] + P.H_T_M
     near = (p_T[:, None, :2] - wheels_xy[None]).norm(dim=-1).min(dim=1).values < P.WHEEL_EXCLUSION_M
-    return (z_world >= P.Z_MIN_MOVING_M) & ~((z_world < h_knee) & near)
+    z_ok, wheel_ok = z_world >= P.Z_MIN_MOVING_M, ~((z_world < h_knee) & near)
+    return (z_ok & wheel_ok, z_ok, wheel_ok) if parts else z_ok & wheel_ok
 
 
-def moving_reason(fk, g, wheels_xy, h_knee=P.H_KNEE_M):
+def moving_reason(fk, g, wheels_xy, h_knee=P.H_KNEE_M, parts=False):
     """§6.3 check 3 for goal points g (..., 9): True where valid while the base command is non-zero."""
     p, _ = fk.tcp_pose(g.reshape(-1, 9)[:, :6], g.reshape(-1, 9)[:, 6:])
-    return moving_ok_positions(p, wheels_xy, h_knee).reshape(g.shape[:-1])
+    out = moving_ok_positions(p, wheels_xy, h_knee, parts)
+    return tuple(o.reshape(g.shape[:-1]) for o in out) if parts else out.reshape(g.shape[:-1])
+
+
+COUNTERS = ("transitions", "steps", "rule_step_goal_only", "rule_forced_step_current_bad", "rule_recheck_forced_step",
+            "kept_goal", "m1_candidates_moving", "m1_rejected_min_height_moving", "m1_rejected_wheel_moving")
 
 
 class GoalSampler:
@@ -63,6 +81,7 @@ class GoalSampler:
         self.draw_from = z(torch.long)        # node whose stored successors the next draw uses
         self.draw_step = z(torch.bool)        # next transition is a forced step
         self.n_failed_draws = 0
+        self.counts = dict.fromkeys(COUNTERS, 0)   # stranding-rule logging (v0.4): see rates()
         s = torch.linspace(0.0, 1.0, P.SEGMENT_SAMPLES, device=device)
         self.s_samples = s
 
@@ -93,17 +112,31 @@ class GoalSampler:
         g = self.current_g()
         return self.fk.tcp_pose(g[:, :6], g[:, 6:])
 
-    def _segment_ok(self, ids, g_from, g_to, step, moving):
-        """Online check 3 for candidate segments; always True while not moving."""
+    def rates(self):
+        """Counters per 1000 accepted transitions (and the raw counts)."""
+        n = max(1, self.counts["transitions"])
+        return dict(counts=dict(self.counts), per_1000_transitions={k: 1000.0 * v / n for k, v in self.counts.items()
+                                                                     if k != "transitions"})
+
+    def _segment_ok(self, ids, g_from, g_to, step, moving, cand_mode=None):
+        """Online check 3 for candidate segments; always True while not moving.
+        Returns (ok, full_ok): full_ok = all 20 points pass (what an interpolated segment needs)."""
         ok = torch.ones(len(ids), dtype=torch.bool, device=self.device)
         if not bool(moving.any()):
-            return ok
+            return ok, ok
         pts = interpolate(g_from[:, None, :].expand(-1, P.SEGMENT_SAMPLES, -1),
                           g_to[:, None, :].expand(-1, P.SEGMENT_SAMPLES, -1),
                           self.s_samples[None].expand(len(ids), -1))
-        valid = moving_reason(self.fk, pts, self.wheels_xy)              # (n, S)
-        seg_ok = torch.where(step, valid[:, -1], valid.all(dim=1))
-        return torch.where(moving, seg_ok, ok)
+        valid, z_ok, wheel_ok = moving_reason(self.fk, pts, self.wheels_xy, parts=True)   # (n, S)
+        sent = torch.ones_like(valid)
+        sent[step, :-1] = False
+        seg_ok = (valid | ~sent).all(dim=1)
+        if cand_mode is not None:
+            m1 = moving & (cand_mode == 1)
+            self.counts["m1_candidates_moving"] += int(m1.sum())
+            self.counts["m1_rejected_min_height_moving"] += int((m1 & ~(z_ok | ~sent).all(dim=1)).sum())
+            self.counts["m1_rejected_wheel_moving"] += int((m1 & ~(wheel_ok | ~sent).all(dim=1)).sum())
+        return torch.where(moving, seg_ok, ok), torch.where(moving, valid.all(dim=1), ok)
 
     def draw(self, env_ids):
         """New goals for env_ids (long): successors of draw_from, segment start = current target.
@@ -129,8 +162,15 @@ class GoalSampler:
             pick = torch.multinomial(match.float() + (~has[:, None]).float(), 1, generator=self.gen)[:, 0]
             cand = succ[torch.arange(len(idx), device=self.device), pick]
             step = force_step[idx] | (self._rand(len(idx)) < P.STEP_FRACTION)
-            ok = has & self._segment_ok(idx, g_from[idx], self.pool.g[cand.clamp(min=0)], step, moving[idx])
+            seg_ok, full_ok = self._segment_ok(idx, g_from[idx], self.pool.g[cand.clamp(min=0)], step, moving[idx],
+                                               torch.where(has, self.pool.mode[cand.clamp(min=0)], -1))
+            ok = has & seg_ok
             acc = idx[ok]
+            c = self.counts
+            c["transitions"] += int(ok.sum())
+            c["steps"] += int((ok & step).sum())
+            c["rule_step_goal_only"] += int((ok & step & moving[idx] & ~full_ok).sum())
+            c["rule_forced_step_current_bad"] += int((ok & cur_bad[idx]).sum())
             e = env_ids[acc]
             self.start_node[e] = node[acc]
             self.goal_node[e] = cand[ok]
@@ -146,6 +186,7 @@ class GoalSampler:
             todo[acc] = False
         failed = env_ids[todo]
         self.n_failed_draws += int(len(failed))
+        self.counts["kept_goal"] += int(len(failed))
         if len(failed):   # keep the previous goal: hold the current target, retry next step
             g = self.current_g()[failed]
             self.g_start[failed], self.g_goal[failed] = g, g
@@ -166,6 +207,7 @@ class GoalSampler:
             pts = interpolate(self.g_start[ids, None].expand(-1, P.SEGMENT_SAMPLES, -1),
                               self.g_goal[ids, None].expand(-1, P.SEGMENT_SAMPLES, -1), ss)
             bad = ids[~moving_reason(self.fk, pts, self.wheels_xy).all(dim=1)]
+            self.counts["rule_recheck_forced_step"] += int(len(bad))
             self.draw_from[bad] = self.start_node[bad]
             self.draw_step[bad] = True
             self.pending[bad] = True

@@ -44,7 +44,7 @@ import traceback
 ROOT = Path(__file__).resolve().parents[1]
 OVERLAY = ROOT / "training/robot_lab_overlay/source/robot_lab/robot_lab/tasks/manager_based/manipulation"
 PACKAGE = "robot_lab.tasks.manager_based.manipulation.reach_height"
-FALL_TERMS = ("fall_tilt", "body_contact")
+FALL_TERMS = ("fall_tilt", "fall_height", "body_contact")
 LEG_S, ARM_S, KI_MOVE, KI_HOLD, I_MAX, PATH_SAMPLES = 4.0, 4.0, 0.02, 0.1, 0.5, 20
 PATH_EXTRA_ARM_BODY_M = (0.01, 0.0)   # planning: arm-body margin + 1 cm first (tracking lag), then protocol
 POSTURE_HOLD_S = 2.0

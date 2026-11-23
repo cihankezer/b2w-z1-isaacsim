@@ -22,7 +22,9 @@ from ..standing_ee.env_cfg import ActionsCfg, SceneCfg, StandingEnvCfg
 from ..standing_ee.runtime import JOINTS, zero_velocity_goal
 from . import protocol as P
 from .runtime import (COMMAND, GroundClearance, IllegalContact, ReachTargetCommandCfg, invalid_state,
-                      tcp_pose_body, tcp_pose_error_body, walk_away)
+                      tcp_pose_body, tcp_pose_error_body)
+from ..standing_ee.terminations import (FALL_HEIGHT_M, FALL_TILT_RAD, DebouncedHeight, DebouncedTilt,
+                                        StandingDrift)
 
 _JOINTS = SceneEntityCfg("robot", joint_names=JOINTS, preserve_order=True)
 
@@ -74,14 +76,16 @@ class TrainingEventsCfg(T1EventsCfg):
 @configclass
 class TerminationsCfg:
     time_out = TerminationTermCfg(func=mdp.time_out, time_out=True)
-    fall_tilt = TerminationTermCfg(func=mdp.bad_orientation, params={"limit_angle": P.FALL_TILT_RAD})
+    # Shared T1/T2/T3 termination set (T3 protocol D6, D20): F2, F3 debounced 5 steps, D standing drift.
+    fall_tilt = TerminationTermCfg(func=DebouncedTilt, params={"limit_rad": FALL_TILT_RAD})
+    fall_height = TerminationTermCfg(func=DebouncedHeight, params={"limit_m": FALL_HEIGHT_M})
     # Any non-wheel body with net contact force > 1 N (T1 collision_contact semantics; includes ground).
     body_contact = TerminationTermCfg(func=IllegalContact, params={
         "threshold": 1.0, "sensor_cfg": SceneEntityCfg("contacts", body_names="(?!.*_foot$).*")})
     arm_contact = TerminationTermCfg(func=IllegalContact, params={
         "threshold": 1.0, "sensor_cfg": SceneEntityCfg("arm_contacts", body_names=".*")})
     invalid_state = TerminationTermCfg(func=invalid_state)
-    walk_away = TerminationTermCfg(func=walk_away, params={"max_displacement_m": P.WALK_AWAY_M})
+    walk_away = TerminationTermCfg(func=StandingDrift, params={"limit_m": P.WALK_AWAY_M})
     ground_clearance = TerminationTermCfg(func=GroundClearance, params={"margin_m": P.CLEARANCE_M})
 
 

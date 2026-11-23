@@ -148,12 +148,6 @@ def invalid_state(env):
     return ~(finite & unit)
 
 
-def walk_away(env, max_displacement_m=P.WALK_AWAY_M):
-    """Horizontal base displacement from the reset position (G origin) above the threshold."""
-    cmd, d = env.command_manager.get_term(COMMAND), env.scene["robot"].data
-    return (d.root_pos_w[:, :2] - cmd.origin_w[:, :2]).norm(dim=1) > max_displacement_m
-
-
 class IllegalContact(ManagerTermBase):
     """mdp.illegal_contact (net contact force > threshold on the selected bodies), keeping the names of the
     bodies that triggered it per env (`reasons`) for failure analysis."""

@@ -10,7 +10,8 @@ Scenario contents (targets in F_T, TCP frame, step targets as in the source task
   S3  1 T2 evaluation target, 10 s, last 1 s scored; episodes alternate low / high band.
   S4  goal-node chain on the evaluation pool from home: T_traj ~ U[1, 3] s (20 % steps), hold ~ U[0.5, 2] s,
       §6.3 check 3 online as in training; filled to the 10 s test phase.
-Targets failing §6.3 for the cell's profile are excluded before drawing (counts in the metadata).
+Filters (v0.4, D28): S1 uses T1's evaluation targets unfiltered except by the moving-cell rules (§6.3 check 3);
+S3 uses the T2 targets with the 0.05 m minimum and the moving-cell rules (no body box). Counts in the metadata.
 """
 
 import numpy as np
@@ -69,8 +70,8 @@ def t2_targets_T(t2_arrays):
     return np.c_[p, np.asarray(t2_arrays["quat_G_wxyz"], float)]
 
 
-def valid_positions(p_T, moving):
-    ok = np.array([r is None for r in target_reason(p_T)])
+def valid_positions(p_T, moving, z_min=True):
+    ok = np.array([r is None for r in target_reason(p_T)]) if z_min else np.ones(len(p_T), dtype=bool)
     if moving:
         wheels = torch.tensor(P.WHEEL_CONTACT_T_XY, dtype=torch.float32)
         ok &= moving_ok_positions(torch.as_tensor(p_T, dtype=torch.float32), wheels).numpy()
@@ -125,7 +126,7 @@ def build(t1_data, t2_arrays, pool_arrays, seed=P.EVAL_SET_SEED, n=P.EPISODES_PE
             nodes, T, H = np.full(S4_MAX_SEGMENTS, -1), np.full(S4_MAX_SEGMENTS, np.nan), np.full(S4_MAX_SEGMENTS, np.nan)
             if scen == "S1":
                 if e == 0:
-                    ok = valid_positions(t1_poses[:, :3], moving)
+                    ok = valid_positions(t1_poses[:, :3], moving, z_min=False)
                     pool1 = np.flatnonzero(ok)
                     excluded[f"{v}-S1"] = int((~ok).sum())
                     first = np.resize(rng.permutation(pool1), n)
@@ -149,7 +150,7 @@ def build(t1_data, t2_arrays, pool_arrays, seed=P.EVAL_SET_SEED, n=P.EPISODES_PE
     arrays = {k: np.asarray(v) if k not in ("cell_V", "cell_S") else np.asarray(v, dtype="U2") for k, v in rows.items()}
     arrays["cmd"] = arrays["cmd"].astype(float)
     arrays["s4_nodes"] = arrays["s4_nodes"].astype(np.int64)
-    meta = dict(benchmark=P.BENCHMARK, protocol_version=P.VERSION, version="t3_eval_set_v3", seed=int(seed),
+    meta = dict(benchmark=P.BENCHMARK, protocol_version=P.VERSION, version="t3_eval_set_v4", seed=int(seed),
                 episodes_per_cell=int(n), cells=[[v, list(cmd), s] for v, cmd, s in cells()],
                 p_home_T=list(P.P_HOME_T), settle_s=P.SETTLE_S, test_s=P.TEST_S,
                 s1_schedule=P.S1_SCHEDULE, s3_schedule=P.S3_SCHEDULE, frame="F_T", tcp_offset_m=list(P.TCP_OFFSET_M),

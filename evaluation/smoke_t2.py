@@ -96,26 +96,34 @@ def eval_phase(env, mods, result, torch, np):
     c["measured_tcp_G_mean"] = tcp_G.mean(axis=0).tolist()
     result["target_map"] = c
 
-    # A6: teleport env 0 by 0.4 m sideways, pitch env 1 by 1.2 rad (nose down); one zero-action step.
+    # A6: teleport env 0 by 0.4 m sideways; pitch env 1 by 1.2 rad (nose down), raised 0.6 m so that it falls
+    # freely without ground contact. F2 is debounced (shared termination set, T2 1.1.0): fall_tilt must fire on
+    # exactly the 5th zero-action step, not the 4th; walk_away (drift) fires on the first step.
     env.reset()
     env.step(zero)
     pose = torch.cat([d.root_pos_w, d.root_quat_w], dim=1).clone()
     yaw0 = float(cmd.yaw[0])
     pose[0, 0] += -0.4 * math.sin(yaw0)
     pose[0, 1] += 0.4 * math.cos(yaw0)
+    pose[1, 2] += 0.6
     q1 = Rotation.from_quat(pose[1, [4, 5, 6, 3]].cpu().numpy()) * Rotation.from_euler("y", 1.2)
     pose[1, 3:] = torch.tensor(q1.as_quat()[[3, 0, 1, 2]], device=env.device, dtype=pose.dtype)
     robot.write_root_pose_to_sim(pose[:2], env_ids=torch.tensor([0, 1], device=env.device))
     robot.write_root_velocity_to_sim(torch.zeros(2, 6, device=env.device), env_ids=torch.tensor([0, 1], device=env.device))
-    env.step(zero)
     tm = env.termination_manager
-    terms = {name: tm.get_term(name).cpu().numpy().astype(bool) for name in tm.active_terms}
-    a6 = dict(env0_sideways_terms=[k for k, v in terms.items() if v[0]],
-              env1_pitch_terms=[k for k, v in terms.items() if v[1]],
-              other_envs_terminated={k: int(v[2:].sum()) for k, v in terms.items()},
+    per_step = []
+    for _ in range(5):
+        env.step(zero)
+        per_step.append({name: tm.get_term(name).cpu().numpy().astype(bool) for name in tm.active_terms})
+    terms = per_step[0]
+    a6 = dict(env0_sideways_terms_step1=[k for k, v in terms.items() if v[0]],
+              env1_pitch_terms_per_step=[[k for k, v in s.items() if v[1]] for s in per_step],
+              other_envs_terminated={k: int(sum(s[k][2:].sum() for s in per_step)) for k in terms},
               ground_clearance_reasons_env1=tm.get_term_cfg("ground_clearance").func.reasons[1])
-    a6["pass_"] = bool(terms["walk_away"][0] and terms["fall_tilt"][1]
-                       and not terms["walk_away"][2:].any() and not terms["fall_tilt"][2:].any())
+    a6["pass_"] = bool(terms["walk_away"][0]
+                       and all(not s["fall_tilt"][1] for s in per_step[:4]) and per_step[4]["fall_tilt"][1]
+                       and all(not v[1] for s in per_step[:4] for v in s.values())
+                       and not any(s[k][2:].any() for s in per_step for k in ("walk_away", "fall_tilt")))
     result["A6"] = a6
 
 

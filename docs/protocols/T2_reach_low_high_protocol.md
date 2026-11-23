@@ -3,7 +3,7 @@
 
 Status: **v1.0, frozen 2026-11-13** (acceptance tests A1–A8 passed, Section 11; A3b dropped as out of scope) · 2026-11-13 · Work package 1 · Scope: environment only, no policy training yet
 Depends on: T1 environment (`docs/protocols/TASK_T1.md`, protocol 1.0.0; 6D end-effector tracking while standing)
-Code: `training/robot_lab_overlay/.../manipulation/reach_height/` (constants in `protocol.py`, `VERSION = "1.0.0"`)
+Code: `training/robot_lab_overlay/.../manipulation/reach_height/` (constants in `protocol.py`, `VERSION = "1.1.0"`; 1.1.0 changes the interface only, results identical to 1.0.0, see the 2026-11-23 entry in Section 12)
 
 Frozen as v1.0 (2026-11-13). Frozen artefacts:
 - Reachability map `t2-reachability-3`, sha256 `22b9e665baa11bced9832107ca17c154ba57751fb55f54c3dbf67d9e1b865404` (`env_cfg.REACHABILITY_SHA256`).
@@ -122,6 +122,8 @@ Procedure (offline, CPU, deterministic, run once per asset version; `reach_heigh
 
 Deliverables per run: `reachability_T2_<run>.npz` (boolean voxel grid, per-voxel Δh, ϕ, arm configuration, posture table with leg joints), `reachability_T2_<run>.json` (voxel counts, band fractions, regions, r and z ranges, empty z layers, A1 verdict, rejection counts, asset hashes), `reachability_T2_<run>.png` (side view, colour = required Δh and ϕ). If a band fails A1, shrink or merge the band and record the decision.
 
+**Note (2026-11-23, from the T3 measurement run `diag-measure-20261123T121813Z-2df42c5d`):** the frozen map `t2-reachability-3` evaluates postures down to Δh = −0.32 m (multiples of 0.02 m ≥ −0.33 m), but every posture with Δh ≤ −0.30 m is infeasible at all pitches (leg IK or clearance with the v0.4 per-class margins), and Δh = −0.28 m is feasible only at pitch 0 and +0.04 rad. The map's **effective lowering limit is −0.28 m** (base height 0.324 m), not the −0.33 m crouch limit of the pitch-0 search with T1 margins. The map and its digest are unchanged; T3 uses 0.324 m as the lowest T2 base height (T3 protocol D26).
+
 Known limits of the analysis: kinematic only (no static stability, torque limits or wheel rolling); finite IK starts can miss solutions (under-estimates reachability); voxel membership is decided at the voxel centre. Acceptance test A3 checks dynamic feasibility.
 
 ### 4.4 Initial state (D9)
@@ -217,14 +219,14 @@ Reuse T1 definitions where they exist, so that the same policy architecture can 
 
 | Condition | Threshold | Source |
 |---|---|---|
-| Fall | tilt > 1.0 rad, or any non-wheel body in contact with the ground | standard legged-RL practice |
+| Fall | tilt > 1.0 rad for ≥ 5 control steps (1.1.0; 1.0.0: no debounce), base height < 0.274 m for ≥ 5 steps (1.1.0), or any non-wheel body in contact with the ground | standard legged-RL practice; T3 shared termination set |
 | Ground clearance | any non-wheel collider < 5 mm above the ground (T1 collider geometry) | T1 clearance policy |
 | Arm self-contact | PhysX arm contact force > 1 N (`collision_arm_contact`) | T1 |
 | Invalid state | non-finite state or non-unit quaternion | T1 |
-| Walk-away | horizontal base displacement > 0.30 m from reset | thesis decision (standing task) |
+| Walk-away (standing drift D) | horizontal base displacement > 0.30 m from the position at the first control step after reset (1.0.0: from the reset position) | thesis decision (standing task); T3 shared termination set |
 | Time-out | 10 s | KAIST |
 
-Not inherited from T1: tilt > 0.5 rad and height < 0.55·h₀ (they would terminate intentional low postures). A tilt threshold of 1.0 rad is far above the 0.28 rad reference band on purpose: intentional pitching must not be terminated; only falls are. The T1 5 mm arm self-clearance stays a logged monitor (as in T1). Implementation (step 3): every row is a separate termination term (`time_out`, `fall_tilt`, `body_contact`, `arm_contact`, `invalid_state`, `walk_away`, `ground_clearance`). `body_contact` uses the T1 `collision_contact` semantics (net contact force > 1 N on any non-wheel body), which also counts self-contact, not only ground contact. `ground_clearance` uses a vectorised broad phase on all environments (lowest corner of each collider AABB, the same gate as T1) and the exact T1 collider check (CPU) only for environments the broad phase flags.
+Not inherited from T1: tilt > 0.5 rad and height < 0.55·h₀ (they would terminate intentional low postures). A tilt threshold of 1.0 rad is far above the 0.28 rad reference band on purpose: intentional pitching must not be terminated; only falls are. The T1 5 mm arm self-clearance stays a logged monitor (as in T1). Implementation (step 3): every row is a separate termination term (`time_out`, `fall_tilt`, `fall_height` (1.1.0), `body_contact`, `arm_contact`, `invalid_state`, `walk_away`, `ground_clearance`). `body_contact` uses the T1 `collision_contact` semantics (net contact force > 1 N on any non-wheel body), which also counts self-contact, not only ground contact. `ground_clearance` uses a vectorised broad phase on all environments (lowest corner of each collider AABB, the same gate as T1) and the exact T1 collider check (CPU) only for environments the broad phase flags.
 
 ---
 
@@ -515,6 +517,12 @@ A7: `eval_t2.py --controller hold` on the full fixed evaluation set (seed 2026, 
 Freeze: protocol 1.0.0. The evaluation-set digest is pinned in `protocol.EVAL_SET_SHA256`, and a CPU test checks that the map file matches `REACHABILITY_SHA256` and that the set regenerates to the pinned digest. A8 was last run on `t2-reachability-2` (throughput does not depend on the map).
 
 Smoke rerun on the frozen map (2026-11-13, protocol 1.0.0, GPU, tmux `t2-smoke-20261113T142017Z`, run `diag-smoke-eval-v1-20261113T142017Z-6cc336b8`): observation (16, 95); target-map consistency passed (2 000 env targets in the sampling set and band, band frequencies 0.349 / 0.326 / 0.326, |θ| ≤ 1.0470 rad, orientation ≤ 2.7e-7 rad, positions ≤ 2.9e-7 m, dropped voxels [10, 0, 0]); A6 passed.
+
+### 2026-11-23 (v1.1.0, interface change for T3; results unchanged)
+
+Changes (T3 protocol v0.4, D6, D20, D22): (1) wheel action channels are velocity targets `a_w · s_w`, s_w = 10 rad/s (1.0.0: ignored, 0). The T2 controllers send zero wheel actions. (2) Shared T1/T2/T3 termination set: `fall_tilt` is debounced (tilt > 1.0 rad for ≥ 5 steps); new `fall_height` (base height < 0.274 m for ≥ 5 steps; h_fall = min(0.5 h_nom, h_T2_min − 0.05) with h_T2_min = 0.324 m); `walk_away` becomes the standing-drift rule (0.30 m from the position latched at the first step after reset). Term names are kept. (3) Smoke test A6 updated: the 1.2 rad pitched env is raised 0.6 m (free fall, no ground contact) and must terminate with `fall_tilt` on exactly the 5th step, not the 4th. Re-run on 1.1.0 (verified at runtime, `logs/t3/diag-smoke-t2-a6-20261123T195054Z-d5097d2f`): env 0 `walk_away` on step 1; env 1 no termination on steps 1–4 and only `fall_tilt` on step 5; no other env terminated; observation and target-map checks passed.
+
+Regression (verified at runtime, GPU `GPU-fee1ef35-…`, image `sha256:b52a5210…`): with both changes, A7 hold (6 000 episodes, `diag-a15-t2-hold-…`, `diag-a14-t2-hold-20261123T170155Z-f955e4e0`) and A3a static postures (600 episodes, `diag-a15-t2-a3a-…`, `diag-a14-t2-a3a-20261123T170155Z-2ccd0aab`) are byte-identical to the 1.0.0 references `diag-A7-hold-run1-20261113T140000Z-22530d07` and `diag-A3a-static-20261113T134430Z-e415332a` (`t3_compare_exact.py`). No reference episode came near the new limits (minimum base height 0.322 m, maximum tilt 0.29 rad). Evaluation-set digest unchanged (`6260df58…937e`; the digest covers the arrays, not the version tag).
 
 ### Open
 
