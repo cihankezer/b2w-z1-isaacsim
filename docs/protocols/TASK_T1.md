@@ -1,7 +1,7 @@
 # T1 — Standing 6D End-Effector Pose Tracking
 
 **Protocol ID:** `T1-STANDING-6D-EE`  
-**Version:** `2.0.0` (2026-11-23: TCP end-effector frame, shared T1/T2/T3 termination set, active wheel channel; see "Protocol 2.0.0" below. 1.0.0: draft.7 + oracle scripted controller, fast shutdown, metrics_export completeness contract; `validate_t1` PASS 8/8 on 2026-11-12; advisor review of the [OPEN] points pending)  
+**Version:** `2.1.0` (2026-11-24: shared 95-dim suite policy observation; see "Protocol 2.1.0" below. Final; released in `benchmark-suite-v1.1`. 2.0.0 (2026-11-23): TCP end-effector frame, shared T1/T2/T3 termination set, active wheel channel; see "Protocol 2.0.0" below. 1.0.0: draft.7 + oracle scripted controller, fast shutdown, metrics_export completeness contract; `validate_t1` PASS 8/8 on 2026-11-12; advisor review of the [OPEN] points pending)  
 **Date:** 2026-11-12  
 **Platform:** Unitree B2W + Unitree Z1 arm, Isaac Lab / Isaac Sim (researcher confirmed)  
 **Work package:** WP1 — implement and validate T1–T3 task environments **before** model-free PPO training  
@@ -78,6 +78,24 @@ The draft.3 visual/CAD-mesh metric is dropped. Results under draft.3/4/5/7 must 
   (`--mode prepare`, frozen 24 + 9 manifest, world workspace bounds, `validate_manifest`) is removed.
 - *Runtime checks order:* `t1_runtime_checks.py` runs the fault checks first and the FK teleport check
   last, each from its own reset (`--checks` selects a subset). The failure term is unchanged.
+
+**Protocol 2.1.0 (2026-11-24; researcher; T3 protocol D40, D44).** Shared policy observation.
+
+- *Observation:* the T1 environment uses the shared 95-dim suite observation (`standing_ee/observations.py`,
+  the same code as T2/T3): joint positions (22), joint velocities (22), base angular velocity (3), projected
+  gravity (3), previous action (22), base-velocity goal (3, zero in T1), TCP goal in B (7), measured TCP pose
+  in B (7), TCP pose error (6), concatenated. It replaces the 89-dim 2.0.0 group (other order, no pose error,
+  not concatenated). A policy trained in the suite training environment (T3, preset `train-t1`) can therefore be
+  evaluated in the T1 environment without an adapter. The goal command keeps its name `ee_pose`; it gains
+  `tcp_pose_w()` (as the T2/T3 commands). Nothing else changes (targets, schedule, terminations, metrics, loops).
+- *Regression (verified at runtime, 2026-11-24):* full validation `repos/robot_lab/logs/t3/diag-reg-t1-v21-20261124T130420Z-949b131f`
+  (commit `99ce67c`, clean tree, 48.4 min) **PASS 8/8**; metrics (73 390 rows incl. fault rows), trial summaries
+  (120) and trajectories byte-identical to the 2.0.0 reference (the oracle does not read observations).
+  `targets.json` differs from 2.0.0 only in `protocol_version` (SHA-256 `4ffb525c…439a`). T1 observation = T3
+  observation for the same state: same terms, order and dims; over 340 steps identical robot states and a
+  maximum observation difference of 0.0 (`evaluation/t1_obs_equals_t3.py`, runs `diag-obs-t1-20261124T130441Z-de1a5c07`,
+  `diag-obs-t3-20261124T130520Z-b941319f`; the goal command is copied from T1 into T3 because T1's target
+  schedule is not a T3 scenario).
 
 **Protocol 2.0.0 (2026-11-23; researcher; T3 protocol D19, D20, D22, D33).** Shared interface with T2/T3.
 
@@ -217,7 +235,7 @@ The paper does **not** specify this entire tuple; this is our implementation for
 | Interface | T1 specification | Status |
 | --- | --- | --- |
 | Simulation state `s_t` | Floating-base pose/twist, joint positions/velocities, contacts, EE pose, actuator state, command, time | **[DESIGN]**; physics truth available to task manager |
-| Observation `o_t` | Joint positions and velocities, base angular velocity, projected gravity, measured EE pose, previous action; target supplied separately | **[DESIGN]**; full policy layout frozen later with T2/T3 |
+| Observation `o_t` | 2.1.0: shared 95-dim suite observation (joint positions and velocities, base angular velocity, projected gravity, previous action, base-velocity goal = 0, TCP goal, measured TCP pose, TCP pose error; all in B) | Frozen with T2/T3 (T3 D40, D44) |
 | Goal `c_t` | Desired SE(3) EE pose in world; transformed to body frame for future actor interface | **[PAPER-ALIGNED]** |
 | Action `a_t` | Joint target command exposed by the simulated articulation; source-independent task/action interface | **[DESIGN]** |
 | Transition `P` | Isaac Lab dynamics and actuator model | **[DESIGN]** |
@@ -237,7 +255,7 @@ The paper does **not** specify this entire tuple; this is our implementation for
 
 The source W1 policy inputs are: 18 non-wheel joint positions, 22 joint velocities, 3D EE position, 9D EE rotation matrix, 22D previous action, 3D base angular velocity, 3D projected gravity, 1D SE(3) reference distance, 12D command, and 32D estimated privileged latent (§III-A, Table I).
 
-**Do not copy the W1 observation dimensions verbatim**: the B2/B2W articulation and T1–T3 shared policy interface may differ. Export each feature in a structured dictionary (`joint_pos`, `joint_vel`, `base_ang_vel`, `projected_gravity`, `ee_pose_body`, `previous_action`, `ee_goal_body`, `base_velocity_goal`); flattening, history length, and privileged latent estimation are deferred until all task suites are defined. The T1 base-velocity goal is identically zero; T3 will use nonzero commands.
+**Do not copy the W1 observation dimensions verbatim**: the B2/B2W articulation and T1–T3 shared policy interface may differ. Since 2.1.0 the policy observation is the shared 95-dim suite group of T2/T3 (Protocol 2.1.0 above; `BENCHMARK_SUITE.md`); history length and privileged inputs (e.g. the T4 payload, a separate privileged group) are not part of it. The T1 base-velocity goal is identically zero; T3 uses nonzero commands.
 
 ## 4. Coordinates and error metrics (normative)
 
@@ -345,7 +363,7 @@ The frozen object is the sampler, not a target list. Machine-readable copy: `pro
 
 ```yaml
 benchmark: T1-STANDING-6D-EE
-version: 2.0.0
+version: 2.1.0   # sampler unchanged since 2.0.0
 robot_variant: B2W
 end_effector_frame: tcp
 ee_frame: tcp
