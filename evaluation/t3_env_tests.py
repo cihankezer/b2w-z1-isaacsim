@@ -9,7 +9,7 @@
              5th only, never in another env
     S2       env3: Z1 commanded to an arm pose that penetrates the trunk (found with the T1 clearance model; arm
              base excluded, arm >= 0.25 m above ground) -> first termination IDs == ["S2"]
---phase speed   --task t1|t2|t3 --num-envs N --steps S: zero-action throughput (env steps/s). t3 also: time in
+--phase speed   --task t1|t2|t3 --num-envs N --steps S [--warmup W]: zero-action throughput (env steps/s). t3 also: time in
                 the target generator (profiled block), stranding counters (D32) and termination counts over all steps.
 Writes <phase>[_<task>].json to --out.
 """
@@ -152,7 +152,7 @@ def checks(env, mods, result, torch, np):
     result["S2"] = dict(env3=e3, pass_=bool(e3 and e3["ids"] == ["S2"]))
 
 
-def speed(env, mods, result, torch, np, task, steps):
+def speed(env, mods, result, torch, np, task, steps, warmup=20):
     n, dev = env.num_envs, env.device
     zero = torch.zeros(n, 22, device=dev)
     tm = env.termination_manager
@@ -169,7 +169,7 @@ def speed(env, mods, result, torch, np, task, steps):
         return time.perf_counter() - t
 
     env.reset(seed=1)
-    run(20)
+    run(warmup)
     wall = run(steps)
     result["throughput"] = dict(task=task, num_envs=n, steps=steps, wall_s=wall, env_steps_per_s=n * steps / wall,
                                 ms_per_step=wall / steps * 1e3)
@@ -184,8 +184,8 @@ def speed(env, mods, result, torch, np, task, steps):
                                    share_of_profiled_step=s["generator_s"] / wall_p,
                                    profiled_ms_per_step=wall_p / k * 1e3)
         result["stranding"] = cmd.sampler.rates()
-        result["stranding"]["sim_steps"] = steps + 20 + k
-        result["stranding"]["sim_time_s_per_env"] = (steps + 20 + k) * env.step_dt
+        result["stranding"]["sim_steps"] = steps + warmup + k
+        result["stranding"]["sim_time_s_per_env"] = (steps + warmup + k) * env.step_dt
     result["terminations"] = counts
 
 
@@ -195,6 +195,7 @@ def main():
     ap.add_argument("--task", choices=("t1", "t2", "t3"), default="t3")
     ap.add_argument("--num-envs", type=int, default=4096)
     ap.add_argument("--steps", type=int, default=200)
+    ap.add_argument("--warmup", type=int, default=20)
     ap.add_argument("--out", type=Path, default=Path("/t1-run/artifacts"))
     from isaaclab.app import AppLauncher
     AppLauncher.add_app_launcher_args(ap)
@@ -248,7 +249,7 @@ def main():
         if args.phase == "checks":
             checks(env, mods, result, torch, np)
         else:
-            speed(env, mods, result, torch, np, args.task, args.steps)
+            speed(env, mods, result, torch, np, args.task, args.steps, args.warmup)
         result["status"] = "completed"
     except Exception:
         result.update(status="error", error=traceback.format_exc())
