@@ -10,8 +10,8 @@ import numpy as np
 from ..reach_height import protocol as T2P
 from . import protocol as P
 
-TERMINATION_CLASS = {"F1": "fall", "F2": "fall", "F3": "fall", "S1": "safety", "S2": "safety", "S3": "safety",
-                     "D": "drift", None: "none"}
+TERMINATION_CLASS = {"F1": "fall", "F2": "fall", "F3": "fall", "S1": "safety", "S2": "safety", "S3": "safety", "S4": "safety",
+                     "D": "drift", "invalid": "invalid", None: "none"}   # invalid = non-finite simulator state
 # Per-height-band reporting (v0.5): T2's bands by target height above the terrain; targets outside [0, 1.10] m.
 BAND_NAMES = T2P.BAND_NAMES + ("outside",)
 

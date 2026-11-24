@@ -4,7 +4,7 @@
 |---|---|
 | Task ID | T3 (Benchmark Task Suite, WP1) |
 | Document type | Implementation specification for the simulation environment |
-| Version | v0.6 (decisions D1–D38 frozen, see Section 0) |
+| Version | v0.7 (decisions D1–D41 frozen, see Section 0) |
 | Date | 2026-11-23 |
 | Platform | Unitree B2W + Unitree Z1, Isaac Lab v2.3.2 on Isaac Sim 5.1 |
 | Depends on | T1 (6D EE tracking while standing), T2 (low/high reach) |
@@ -57,6 +57,9 @@ These decisions are frozen. D1–D11 answer the questions of the first T3 plan; 
 | D36 | Per-height-band reporting | Evaluation outputs include a table per T2 height band (low 0–0.30, mid 0.30–0.80, high 0.80–1.10 m, target height above the terrain) plus an `outside` row (> 1.10 m): e_pos, e_ori and hold success. | 9 |
 | D37 | T2 version | T2 is bumped to 1.1.0 for the wheel channel (D22) and the shared termination set (D6). Its A7/A3a results are byte-identical to 1.0.0 (A15, A14). | 4.3 |
 | D38 | Evaluation set v5 | S1 is built from the T1 2.0.0 reference target file (`ee_frame: tcp`, SHA-256 `908f0ad6…3c3d`) instead of v1c, so A10 compares against the current T1 reference. The builder accepts only a T1 2.0.0 file. v5 must equal v4 except for float rounding in S1 (every S1 target within 1e-9 in position and quaternion; all other arrays identical). v4 stays listed as superseded. | 7.4, 11 |
+| D39 | Body self-contact | New termination ID **S4 "body self-contact"** (class safety): contact > 1 N between trunk/leg bodies (leg–leg, leg–trunk), not with the terrain. S2 is arm contact only (arm–body, arm–arm). Labelling: the net-force sensors do not report contact partners, so at a contact termination each contacting body is classified by geometry (D21); an arm body in self-contact gives S2, and the trunk/leg bodies of that step are attributed to S2 as well; trunk/leg bodies in self-contact with no arm body in self-contact give S4. | 4.3, 8.3, 9.1 |
+| D40 | Shared observation layout | T3 uses T2's policy observation unchanged (95 dims, same terms and order) with the 3-dim velocity-goal slot filled by the velocity command; no T3-only dims. The T3 TCP command is named `tcp_target` (as in T2) so T2's observation terms apply unchanged. | 6, 11 |
+| D41 | Target consistency (A18) and throughput reporting | A18: at every step the target in the policy observation, the target used by the metrics and the debug marker are the same pose (1e-6), on all cells of V1, V5 and V7. Throughput is reported as env steps/s for T1, T2 and T3 at the same env count, with the time spent in the target generator. | 11 |
 
 ### 0.1 Change log
 
@@ -67,6 +70,7 @@ These decisions are frozen. D1–D11 answer the questions of the first T3 plan; 
 | v0.3 | Decisions D12–D25. Feasibility table and collision-checked FK goal pool; joint-space interpolation for all training goals; 20 % step transitions; M2 = T1 fixed points; S1/S3 inherit the T1/T2 schedules (S1: 2 points × 5 s, S3: 1 target × 10 s); geodesic orientation error; s_w = 10 rad/s; A6 CPU, A9 map postures, A15 regression, A17 contact filter; measured values of Section 10 filled in; online step rules of Sec. 6.3; new open items 6–10 (Section 13). |
 | v0.5 | Decisions D33–D37: T1 version and step-4 regression rule (D33), dead-end mask (D34), moving minimum as a non-binding guard (D35), per-height-band table (D36), T2 1.1.0 (D37). Artifacts pinned: training pool `6e4a18f7…0c70`, evaluation pool `86b45c40…d911`, evaluation set v4 `779f76ff…7658`. A14 and A15 passed (Section 11). |
 | v0.6 | D38: evaluation set v5 (S1 from T1 2.0.0), digest `0a7dd22d…4151`; v4 superseded. |
+| v0.7 | D39 (S4 body self-contact; S2 arm only), D40 (shared observation layout), D41 (A18, throughput reporting). Step-5 environment (`walk_reach/runtime.py`, `env_cfg.py`). Open item 12 (wheel turning). |
 | v0.4 | Decisions D26–D32. Body box removed (D29); h_T2_min = 0.324 m, h_fall = 0.274 m (D26); M3 height stratification (D27); inheritance of success rule and clearance margins, M2 with T1 margins, S1 unfiltered (D28); training pool ≈ 30 000 goals (D30); stranding-rule logging (D32); evaluation set v4. Open items 6–11 closed or updated. |
 
 ---
@@ -192,8 +196,9 @@ All three tasks use this set, in training and in evaluation. Each termination re
 | F2 | Tilt angle (base z-axis vs. world z) > 1.0 rad for ≥ 5 steps (0.1 s) | Fall | No, add (T1 today: 0.5 rad, no debounce) |
 | F3 | Base height above terrain < 0.274 m for ≥ 5 steps (D26) | Fall | No, add (T1 today: < 0.55 · h ≈ 0.332 m, no debounce) |
 | S1 | Contact force > 1 N between the terrain and any arm link or the gripper | Safety | Yes (arm contact sensor) |
-| S2 | Arm or gripper contact with the robot's own trunk or legs, **or arm-to-arm contact** (D21) | Safety | Yes (arm contact sensor) |
+| S2 | Arm or gripper contact with the robot's own trunk or legs, **or arm-to-arm contact** (D21); arm contact only (D39) | Safety | Yes (arm contact sensor) |
 | S3 | Ground clearance of **any non-wheel collider** < 5 mm (T2 fast GPU check + exact CPU check), as in T1/T2 (D21) | Safety | Yes |
+| S4 | Body self-contact: contact > 1 N between trunk/leg bodies (leg–leg, leg–trunk), not with the terrain and not attributed to an arm contact (D39) | Safety | Partly: T1/T2 terminate on it without a separate label |
 | D | Standing drift: while the velocity command is zero, horizontal base displacement > 0.30 m from the position latched when the command became zero | Drift | Generalizes T2's 0.30 m rule; add to T1 |
 | T | Time-out | — | Yes |
 
@@ -416,7 +421,7 @@ The first 1.0 s of the test phase is excluded from the steady-state values. Velo
 Report separately, each with a Wilson 95 % interval:
 
 - **Fall rate:** episodes ended by F1, F2 or F3.
-- **Safety termination rate:** episodes ended by S1, S2 or S3.
+- **Safety termination rate:** episodes ended by S1, S2, S3 or S4.
 - **Drift rate:** episodes ended by D.
 - Mean time to termination, per class.
 
@@ -455,7 +460,7 @@ Both as per-step means over alive steps. Never primary.
 
 One row per episode (CSV, appended as episodes finish, as in T2):
 
-`method, policy_seed, eval_set_version, eval_set_hash, cell_V, cell_S, episode_index, termination_class (none/fall/safety/drift), termination_id (F1/F2/F3/S1/S2/S3/D), t_termination, n_alive_steps, e_pos_mean_all, e_pos_mean_hold, e_pos_p95, e_ori_mean_all, e_ori_mean_hold, e_frob_mean_all, primary_success_rate, hold_success_rate, n_holds_completed, e_pos_mean_first_hold, e_ori_mean_first_hold, e_vx_mean, e_vy_mean, e_w_mean, vel_settle_time, base_h_mean, base_h_min, tilt_mean, tilt_max, nominal_deviation, joint_limit_frac, torque_sat_frac, power_mean, legacy_ee_sphere_l1, legacy_vx_l1`
+`method, policy_seed, eval_set_version, eval_set_hash, cell_V, cell_S, episode_index, termination_class (none/fall/safety/drift), termination_id (F1/F2/F3/S1/S2/S3/S4/D), t_termination, n_alive_steps, e_pos_mean_all, e_pos_mean_hold, e_pos_p95, e_ori_mean_all, e_ori_mean_hold, e_frob_mean_all, primary_success_rate, hold_success_rate, n_holds_completed, e_pos_mean_first_hold, e_ori_mean_first_hold, e_vx_mean, e_vy_mean, e_w_mean, vel_settle_time, base_h_mean, base_h_min, tilt_mean, tilt_max, nominal_deviation, joint_limit_frac, torque_sat_frac, power_mean, legacy_ee_sphere_l1, legacy_vx_l1`
 
 Plus a manifest file: asset hash, protocol version, evaluation-set digest, goal-pool digests, code commit, image ID.
 
@@ -503,6 +508,7 @@ Scripted inputs only; no trained policy except where stated. "CPU" tests are in 
 | A15 | T1 and T2 oracle evaluations with active wheel channels and zero wheel action (D22) | Results reproduced exactly (regression) | Sim |
 | A16 | Coverage report (Sec. 6.4) | Report produced; no pass threshold | CPU |
 | A17 | Ground-filtered contact sensor (`filter_prim_paths_expr`) on the multi-body robot sensor, small scripted scene: one body on the ground, one arm–body contact (D21) | Terrain contact reported only for the ground contact; otherwise fall back to geometric classification | Sim |
+| A18 | All cells of V1, V5, V7 with a scripted controller that moves and turns the base (D41) | Every step: target in the policy observation = target used by the metrics = debug-marker pose, in B, within 1e-6 (position and quaternion) | Sim |
 
 Simulator tests run through the existing launcher on an allocated GPU, in tmux, logged under `logs/t3`.
 
@@ -519,6 +525,10 @@ Simulator tests run through the existing launcher on an allocated GPU, in tmux, 
 | Step 4: T1 2.0.0 (TCP switch) | **Pass.** Validation 8/8 (48.8 min, commit `9296146`). D33 regression vs v1c: 73 374 trial rows matched, orientation error identical in all rows, failure reasons identical, \|e_pos_tcp − e_pos_flange\| ≤ 0.171·θ_geo + 1e-6 in all rows (max violation 0.0 m, max \|Δe_pos\| 0.314 m). This run is the new T1 reference; v1c stays archived. | `diag-t1v2-validate-20261123T204134Z-26af8a39` |
 | Evaluation set v5 (D38) | **Pass.** Built from the T1 2.0.0 targets (3.6 s, CPU). Against v4: 704 S1 episodes, S1 max \|Δpos\| 2.2e-16 m, max \|Δq\| 0 (tolerance 1e-9); every other array identical. Array digest `0a7dd22d8d7bf3fcee335b70e658d12b990d52399c0c8f07c0fd0bf6cd0d4151`, file SHA-256 `1de666a2…855b`. | `diag-eval-set-v5-20261124T073730Z-cf80791b`, `diag-eval-set-v5-compare-20261124T073734Z-834cd4f5` |
 | CPU suite on v5 | **18/18 pass** (A13 regenerates the v5 digest from the T1 2.0.0 targets). | `diag-cpu-t3-v5-20261124T073809Z-179ac298` |
+| Observation layout (D40) | **Pass.** T3 policy observation = T2's terms, order and dims (95); the velocity-goal slot equals the velocity command. | `diag-env-checks-20261124T074833Z-5e3688b9` |
+| A8 | **Pass.** Base pitched 1.2 rad (raised 0.6 m): no termination on steps 1–4, F2 only on step 5. Tip-over (0.35 m, roll 1.3 rad): F1 on step 1 (FR/RR calf on the terrain; S3 also fired). Injected base height 0.2 m: F3 on the 5th evaluation only, no other env. Control env: no termination in 100 steps. Run before D39; no S2/S4 label involved. | `diag-env-checks-20261124T074833Z-5e3688b9` |
+| S2 case (A17 follow-up) | **Pass.** Z1 commanded to a pose penetrating the trunk (found with the T1 clearance model): step 8, gripperStator against lidar_link, IDs = [S2]. Under D39 the same contact is still S2 (arm body in self-contact). | `diag-env-checks-20261124T074833Z-5e3688b9` |
+| A18 | **Pass.** 9 cells (V1, V5, V7 × S1, S3, S4), 576 envs, 600 steps, scripted `carry` input (open item 12): max \|Δ\| observation vs. metrics vs. marker 4.6e-7 m (position), 2.8e-7 (quaternion); schedule recomputed independently in float64: 2.1e-7 m, 3.7e-7. Base motion per episode: V1 5.8 m, V5 8.2 rad yaw, V7 6.0 rad and 7.9 m. The kinematic carry caused body self-contacts (V5 66/192, V7 192/192: rear calves, FL thigh–trunk; labelled S2 before D39, S4 under D39); only alive steps are compared. Earlier passes with the open-loop wheel controller (no yaw) and a velocity-only carry: max 6.1e-8 / 4.5e-7 m. | `diag-a18-carry3-20261124T081952Z-b0d13bb6` (also `diag-a18-…075049Z…`, `diag-a18-carry-…`, `diag-a18-carry2-…`) |
 
 ---
 
@@ -539,6 +549,7 @@ Simulator tests run through the existing launcher on an allocated GPU, in tmux, 
 |---|---|---|
 | 1 | Minimum target height 0.10 m while moving | Supervisor approval pending; binding rate reported (D31) |
 | 3 | Wheel K_d (s_w fixed by D22) | K_d = 20 (current asset config) |
+| 12 | Wheel turning: in the scripted test (open-loop differential wheel speeds, `eval_t3.py --controller drive`) the wheels alone produce no yaw (V5: e_ω ≈ 0.6 rad/s, the full command); cause unknown, pending the original developer's reply. Wheel controller, asset and physics settings unchanged until then. | A18 uses the scripted `carry` input (base moved kinematically) |
 
 Closed in v0.5: 4 (F2, F3 and the drift rule in T1: implemented, A14 passed 2026-11-23). Closed in v0.4: 6 (lowest base height, D26), 7 (pool size, D30), 8 (S3 success rule, D28), 9 (body box, D29), 10 (M2 margins, D28), 11 (A5 height coverage, D27). Closed earlier: 2 (D18/D25), 5 (Section 10).
 

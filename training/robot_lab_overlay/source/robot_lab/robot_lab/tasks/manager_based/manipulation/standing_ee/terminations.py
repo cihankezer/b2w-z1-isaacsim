@@ -28,7 +28,7 @@ CONTACT_N = 1.0
 DRIFT_M = 0.30
 GROUND_CLEARANCE_M = 0.005
 TERRAIN_BAND_M = 0.01
-CLASS = {"F1": "fall", "F2": "fall", "F3": "fall", "S1": "safety", "S2": "safety", "S3": "safety", "D": "drift"}
+CLASS = {"F1": "fall", "F2": "fall", "F3": "fall", "S1": "safety", "S2": "safety", "S3": "safety", "S4": "safety", "D": "drift"}
 
 
 def debounce(counter, condition, steps=DEBOUNCE_STEPS):
@@ -89,6 +89,10 @@ class StandingDrift(ManagerTermBase):
     def reset(self, env_ids=None):
         self.latched[slice(None) if env_ids is None else env_ids] = False
 
-    def __call__(self, env, limit_m=DRIFT_M):
-        standing = torch.ones(env.num_envs, dtype=torch.bool, device=env.device)
+    def __call__(self, env, limit_m=DRIFT_M, velocity_command=None):
+        # T3: standing = the named base-velocity command is zero (latch kept while it stays zero).
+        if velocity_command is None:
+            standing = torch.ones(env.num_envs, dtype=torch.bool, device=env.device)
+        else:
+            standing = (env.command_manager.get_command(velocity_command) == 0).all(dim=1)
         return drift_update(self.latch, self.latched, standing, env.scene["robot"].data.root_pos_w[:, :2], limit_m)
