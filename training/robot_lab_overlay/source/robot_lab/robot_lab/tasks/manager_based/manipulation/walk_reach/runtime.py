@@ -89,10 +89,12 @@ class WalkReachTargetCommand(CommandTerm):
         arrays, meta = POOL.load(path, cfg.pool_sha256)
         self.pool_path, self.pool_sha256 = path, meta["pool_sha256"]
         self.fk = ArmFK(dev)
-        self.pool = GOALS.GoalPool(arrays, dev)
+        modes = tuple(m + 1 for m, w in enumerate(cfg.mode_weights) if w > 0)
+        self.pool = GOALS.GoalPool(arrays, dev, modes=modes)
         self.generator = torch.Generator(device=dev)
         self.generator.manual_seed(cfg.seed)
-        self.sampler = GOALS.GoalSampler(self.pool, n, dev, generator=self.generator, fk=self.fk)
+        self.sampler = GOALS.GoalSampler(self.pool, n, dev, generator=self.generator, fk=self.fk,
+                                         mode_weights=cfg.mode_weights)
         home = self.pool.g[self.pool.home][None]
         self.home_T = [x[0] for x in self.fk.tcp_pose(home[:, :6], home[:, 6:])]
         # Evaluation schedule per env (kind 0 = training sampler, 1 = step points S1/S3, 2 = goal chain S4).
@@ -243,6 +245,7 @@ class WalkReachTargetCommandCfg(CommandTermCfg):
     pool_path: str = ""                          # empty: T3_POOL_TRAIN or the pinned path under logs/t3
     pool_sha256: str = P.TRAIN_POOL_SHA256
     seed: int = P.TRAIN_POOL_SEED
+    mode_weights: tuple = P.MODE_WEIGHTS         # (M1, M2, M3) draw weights; training preset parameter (D42)
 
 
 # ---------------------------------------------------------------- termination reasons (§4.3, D21)

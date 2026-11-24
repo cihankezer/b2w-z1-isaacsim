@@ -409,3 +409,25 @@ def test_A13_eval_set_regenerates():
     s4 = arrays["cell_S"] == "S4"
     total = np.nansum(np.nan_to_num(arrays["s4_T_traj"][s4]) + np.nan_to_num(arrays["s4_hold"][s4]), axis=1)
     assert np.all(total >= P.TEST_S - 1e-9)
+
+
+# ---------------------------------------------------------------- training presets (D42)
+
+@needs(POOL_TRAIN)
+def test_training_preset_mode_restriction(train_pool):
+    """train-t1 (M2 only): the pool keeps only M2 successors, every drawn goal is M2 and no goal is kept;
+    the full mode set reproduces the D34 dead-end mask (52 goals)."""
+    arrays, _ = train_pool
+    assert int(GOALS.GoalPool(arrays).dead_end.sum()) == 52
+    assert not bool((np.asarray(arrays["successors"]) == 0).any())     # no stored edge to home
+    pool = GOALS.GoalPool(arrays, modes=(2,))
+    s = pool.successors[pool.successors >= 0]
+    assert bool((pool.mode[s] == 2).all()) and not bool(pool.dead_end[pool.home])
+    gs = GOALS.GoalSampler(pool, 512, generator=torch.Generator().manual_seed(5), fk=KIN.ArmFK(),
+                           mode_weights=(0.0, 1.0, 0.0))
+    gs.reset(torch.arange(512))
+    for _ in range(1500):
+        gs.update(P.CONTROL_DT_S, torch.zeros(512, dtype=torch.bool))
+    c = gs.rates()["counts"]
+    assert c["transitions"] > 1000 and c["mode_M2"] == c["transitions"] and c["kept_goal"] == 0
+    assert bool((pool.mode[gs.goal_node] == 2).all())

@@ -19,3 +19,12 @@ gym.register(
     disable_env_checker=True,
     kwargs={"env_cfg_entry_point": f"{__name__}.env_cfg:T3WalkReachEvalEnvCfg"},
 )
+
+# Training presets of the suite (D42): one training environment (T3), three command distributions.
+for _id, _cfg in (("T1", "TrainT1EnvCfg"), ("T1T2", "TrainT1T2EnvCfg"), ("T3", "TrainT3EnvCfg")):
+    gym.register(
+        id=f"RobotLab-Isaac-Suite-Train-{_id}-Unitree-B2W-Z1-v0",
+        entry_point="isaaclab.envs:ManagerBasedRLEnv",
+        disable_env_checker=True,
+        kwargs={"env_cfg_entry_point": f"{__name__}.env_cfg:{_cfg}"},
+    )

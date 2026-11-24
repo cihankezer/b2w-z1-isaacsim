@@ -21,13 +21,19 @@ from .kinematics import ArmFK, interpolate
 
 
 class GoalPool:
-    """Pool arrays (pool.build) on a device."""
+    """Pool arrays (pool.build) on a device. modes: goal modes the sampler may draw (training preset, D42);
+    stored successors of other modes are removed before the dead-end mask (D34 then applies per preset); edges to
+    home (mode 0) are kept as before (the frozen pools store none)."""
 
-    def __init__(self, arrays, device="cpu"):
+    def __init__(self, arrays, device="cpu", modes=(1, 2, 3)):
         t = lambda x, dt=torch.float32: torch.as_tensor(x, dtype=dt, device=device)  # noqa: E731
         self.g = torch.cat([t(arrays["q_arm"]), t(arrays["b"])], dim=1)       # (N, 9)
         self.mode = t(arrays["mode"], torch.long)                              # 0 home, 1 M1, 2 M2, 3 M3
         self.successors = t(arrays["successors"], torch.long)                  # (N, K), -1 = none
+        allowed = torch.zeros(4, dtype=torch.bool, device=device)
+        allowed[[0, *modes]] = True
+        keep = (self.successors >= 0) & allowed[self.mode[self.successors.clamp(min=0)]]
+        self.successors = torch.where(keep, self.successors, torch.full_like(self.successors, -1))
         # Dead-end mask (protocol v0.5 D34): a goal without a stored successor is never drawn. Repeated until no
         # goal is left whose successors are all masked; the pool file is unchanged.
         self.dead_end = torch.zeros(len(self.mode), dtype=torch.bool, device=device)
@@ -62,15 +68,16 @@ def moving_reason(fk, g, wheels_xy, h_knee=P.H_KNEE_M, parts=False):
 
 
 COUNTERS = ("transitions", "steps", "rule_step_goal_only", "rule_forced_step_current_bad", "rule_recheck_forced_step",
-            "kept_goal", "m1_candidates_moving", "m1_rejected_min_height_moving", "m1_rejected_wheel_moving")
+            "kept_goal", "m1_candidates_moving", "m1_rejected_min_height_moving", "m1_rejected_wheel_moving",
+            "mode_M1", "mode_M2", "mode_M3")
 
 
 class GoalSampler:
-    def __init__(self, pool, num_envs, device="cpu", generator=None, fk=None):
+    def __init__(self, pool, num_envs, device="cpu", generator=None, fk=None, mode_weights=P.MODE_WEIGHTS):
         self.pool, self.n, self.device, self.gen = pool, num_envs, device, generator
         self.fk = fk or ArmFK(device)
         self.wheels_xy = torch.tensor(P.WHEEL_CONTACT_T_XY, dtype=torch.float32, device=device)
-        self.weights = torch.tensor(P.MODE_WEIGHTS, device=device)
+        self.weights = torch.tensor(mode_weights, dtype=torch.float32, device=device)   # M1, M2, M3 (D42)
         z = lambda dt=torch.float32: torch.zeros(num_envs, dtype=dt, device=device)  # noqa: E731
         self.start_node, self.goal_node = z(torch.long), z(torch.long)
         self.g_start = pool.g[self.goal_node].clone()
@@ -171,6 +178,8 @@ class GoalSampler:
             c["steps"] += int((ok & step).sum())
             c["rule_step_goal_only"] += int((ok & step & moving[idx] & ~full_ok).sum())
             c["rule_forced_step_current_bad"] += int((ok & cur_bad[idx]).sum())
+            for m in (1, 2, 3):
+                c[f"mode_M{m}"] += int((ok & (self.pool.mode[cand.clamp(min=0)] == m)).sum())
             e = env_ids[acc]
             self.start_node[e] = node[acc]
             self.goal_node[e] = cand[ok]

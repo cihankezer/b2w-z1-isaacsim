@@ -9,7 +9,7 @@
              5th only, never in another env
     S2       env3: Z1 commanded to an arm pose that penetrates the trunk (found with the T1 clearance model; arm
              base excluded, arm >= 0.25 m above ground) -> first termination IDs == ["S2"]
---phase speed   --task t1|t2|t3 --num-envs N --steps S [--warmup W]: zero-action throughput (env steps/s). t3 also: time in
+--phase speed   --task t1|t2|t3 [--preset train-t1|train-t1t2|train-t3] --num-envs N --steps S [--warmup W]: zero-action throughput (env steps/s). t3 also: time in
                 the target generator (profiled block), stranding counters (D32) and termination counts over all steps.
 Writes <phase>[_<task>].json to --out.
 """
@@ -157,12 +157,17 @@ def speed(env, mods, result, torch, np, task, steps, warmup=20):
     zero = torch.zeros(n, 22, device=dev)
     tm = env.termination_manager
     counts = {k: 0 for k in tm.active_terms}
+    standing = torch.zeros((), dtype=torch.float64, device=dev)   # env-steps with a zero velocity command (t3)
+    seen = [0]
 
     def run(k):
         torch.cuda.synchronize()
         t = time.perf_counter()
         for _ in range(k):
             env.step(zero)
+            if task == "t3":
+                standing.add_((env.command_manager.get_command("base_velocity") == 0).all(dim=1).sum())
+                seen[0] += n
             for name in counts:
                 counts[name] += int(tm.get_term(name).sum())
         torch.cuda.synchronize()
@@ -184,6 +189,14 @@ def speed(env, mods, result, torch, np, task, steps, warmup=20):
                                    share_of_profiled_step=s["generator_s"] / wall_p,
                                    profiled_ms_per_step=wall_p / k * 1e3)
         result["stranding"] = cmd.sampler.rates()
+        c = result["stranding"]["counts"]
+        modes = {m: c[f"mode_{m}"] for m in ("M1", "M2", "M3")}
+        result["preset"] = dict(
+            standing_fraction_cfg=env.cfg.commands.base_velocity.rel_standing_envs,
+            standing_fraction_measured=float(standing) / max(seen[0], 1),
+            mode_weights_cfg=list(env.cfg.commands.tcp_target.mode_weights), goal_mode_counts=modes,
+            goal_mode_fractions={m: v / max(sum(modes.values()), 1) for m, v in modes.items()},
+            masked_dead_end_goals=int(cmd.pool.dead_end.sum()))
         result["stranding"]["sim_steps"] = steps + warmup + k
         result["stranding"]["sim_time_s_per_env"] = (steps + warmup + k) * env.step_dt
     result["terminations"] = counts
@@ -196,6 +209,7 @@ def main():
     ap.add_argument("--num-envs", type=int, default=4096)
     ap.add_argument("--steps", type=int, default=200)
     ap.add_argument("--warmup", type=int, default=20)
+    ap.add_argument("--preset", choices=("train-t1", "train-t1t2", "train-t3"), default=None)
     ap.add_argument("--out", type=Path, default=Path("/t1-run/artifacts"))
     from isaaclab.app import AppLauncher
     AppLauncher.add_app_launcher_args(ap)
@@ -203,7 +217,7 @@ def main():
     args.headless = True
     if not os.environ.get("ISAAC_GPU_UUID") or os.environ["ISAAC_GPU_UUID"] == "all":
         ap.error("needs one allocated ISAAC_GPU_UUID")
-    name = args.phase if args.phase == "checks" else f"speed_{args.task}"
+    name = args.phase if args.phase == "checks" else f"speed_{args.preset or args.task}"
     args.out.mkdir(parents=True, exist_ok=True)
     result = dict(phase=args.phase, task=args.task, gpu_uuid=os.environ["ISAAC_GPU_UUID"],
                   image_id=os.environ.get("T1_IMAGE_ID"), status="started")
@@ -224,9 +238,13 @@ def main():
             mods = {m: importlib.import_module(f"{PKG}.walk_reach.{m}") for m in ("protocol", "runtime", "env_cfg")}
             mods["JOINTS"] = importlib.import_module(f"{PKG}.standing_ee.runtime").JOINTS
             E = mods["env_cfg"]
-            cfg = E.T3WalkReachEvalEnvCfg() if args.phase == "checks" else E.T3WalkReachEnvCfg()
+            cfg = (E.T3WalkReachEvalEnvCfg() if args.phase == "checks" else
+                   E.PRESETS[args.preset]() if args.preset else E.T3WalkReachEnvCfg())
             task = ("RobotLab-Isaac-T3-WalkReach-Eval-Unitree-B2W-Z1-v0" if args.phase == "checks"
-                    else "RobotLab-Isaac-T3-WalkReach-Unitree-B2W-Z1-v0")
+                    else {"train-t1": "RobotLab-Isaac-Suite-Train-T1-Unitree-B2W-Z1-v0",
+                          "train-t1t2": "RobotLab-Isaac-Suite-Train-T1T2-Unitree-B2W-Z1-v0",
+                          "train-t3": "RobotLab-Isaac-Suite-Train-T3-Unitree-B2W-Z1-v0"}.get(
+                        args.preset, "RobotLab-Isaac-T3-WalkReach-Unitree-B2W-Z1-v0"))
             cfg.scene.num_envs = 5 if args.phase == "checks" else args.num_envs
             result["protocol_version"] = mods["protocol"].VERSION
         elif args.task == "t2":
