@@ -4,12 +4,13 @@
 |---|---|
 | Task ID | T3 (Benchmark Task Suite, WP1) |
 | Document type | Implementation specification for the simulation environment |
-| Version | v0.7 (decisions D1–D41 frozen, see Section 0) |
+| Version | v0.8 (decisions D1–D42 frozen, see Section 0) |
+| Status | **Final except open item 12** (wheel yaw authority). Released in `benchmark-suite-v1` with T1 2.0.0 and T2 1.1.0 (final); suite summary in `BENCHMARK_SUITE.md`. |
 | Date | 2026-11-23 |
 | Platform | Unitree B2W + Unitree Z1, Isaac Lab v2.3.2 on Isaac Sim 5.1 |
 | Depends on | T1 (6D EE tracking while standing), T2 (low/high reach) |
 | Reference protocols | Jiang et al., RA-L 2025 (LimX W1, wheeled quadruped manipulator); Deep Whole-Body Control (Fu et al., CoRL 2022), paper and code; Visual Whole-Body Control (Liu et al., CoRL 2024) |
-| Code | `training/robot_lab_overlay/.../manipulation/walk_reach/` (constants in `protocol.py`, `VERSION = "0.4.0"`) |
+| Code | `training/robot_lab_overlay/.../manipulation/walk_reach/` (constants in `protocol.py`, `VERSION = "0.8.0"`) |
 
 ---
 
@@ -60,6 +61,7 @@ These decisions are frozen. D1–D11 answer the questions of the first T3 plan; 
 | D39 | Body self-contact | New termination ID **S4 "body self-contact"** (class safety): contact > 1 N between trunk/leg bodies (leg–leg, leg–trunk), not with the terrain. S2 is arm contact only (arm–body, arm–arm). Labelling: the net-force sensors do not report contact partners, so at a contact termination each contacting body is classified by geometry (D21); an arm body in self-contact gives S2, and the trunk/leg bodies of that step are attributed to S2 as well; trunk/leg bodies in self-contact with no arm body in self-contact give S4. | 4.3, 8.3, 9.1 |
 | D40 | Shared observation layout | T3 uses T2's policy observation unchanged (95 dims, same terms and order) with the 3-dim velocity-goal slot filled by the velocity command; no T3-only dims. The T3 TCP command is named `tcp_target` (as in T2) so T2's observation terms apply unchanged. | 6, 11 |
 | D41 | Target consistency (A18) and throughput reporting | A18: at every step the target in the policy observation, the target used by the metrics and the debug marker are the same pose (1e-6), on all cells of V1, V5 and V7. Throughput is reported as env steps/s for T1, T2 and T3 at the same env count, with the time spent in the target generator. | 11 |
+| D42 | Training presets | The T3 environment is the single training environment of the suite; the T1 and T2 environments are evaluation-only (T1's per-env Python loops therefore do not matter; T1 code unchanged). Three presets, each a config class with its own gym ID, sharing the action, the 95-dim observation and the termination set: `train-t1` (standing fraction 1.0, goal modes M2 only), `train-t1t2` (standing fraction 1.0, M1 + M2 + M3 with the §6.2 weights), `train-t3` (the full §6.1–6.2 distribution). The standing fraction (`base_velocity.rel_standing_envs`) and the mode weights (`tcp_target.mode_weights`) are config parameters; stored successors of modes with weight 0 are removed before the dead-end mask (D34). | 6, 11 |
 
 ### 0.1 Change log
 
@@ -71,6 +73,7 @@ These decisions are frozen. D1–D11 answer the questions of the first T3 plan; 
 | v0.5 | Decisions D33–D37: T1 version and step-4 regression rule (D33), dead-end mask (D34), moving minimum as a non-binding guard (D35), per-height-band table (D36), T2 1.1.0 (D37). Artifacts pinned: training pool `6e4a18f7…0c70`, evaluation pool `86b45c40…d911`, evaluation set v4 `779f76ff…7658`. A14 and A15 passed (Section 11). |
 | v0.6 | D38: evaluation set v5 (S1 from T1 2.0.0), digest `0a7dd22d…4151`; v4 superseded. |
 | v0.7 | D39 (S4 body self-contact; S2 arm only), D40 (shared observation layout), D41 (A18, throughput reporting). Step-5 environment (`walk_reach/runtime.py`, `env_cfg.py`). Open item 12 (wheel turning). |
+| v0.8 | D42 (training presets). Status final except open item 12. Open items 13 (payload ξ with T4) and 14 (T1 observation layout). Code version 0.8.0. |
 | v0.4 | Decisions D26–D32. Body box removed (D29); h_T2_min = 0.324 m, h_fall = 0.274 m (D26); M3 height stratification (D27); inheritance of success rule and clearance margins, M2 with T1 margins, S1 unfiltered (D28); training pool ≈ 30 000 goals (D30); stranding-rule logging (D32); evaluation set v4. Open items 6–11 closed or updated. |
 
 ---
@@ -534,6 +537,8 @@ Simulator tests run through the existing launcher on an allocated GPU, in tmux, 
 | Throughput (D41), 4 096 envs, zero action | T1 2.0.0: 7 env steps/s (587 s per control step; per-env Python loops in the failure monitor and step recorder, CPU-bound; 3 steps measured). T2 1.1.0: 137 421 env steps/s (29.8 ms per step). T3: 103 104 env steps/s (39.7 ms per step, 10 000 steps); target generator 5.3 ms per step, 15 % of the profiled step. | `diag-speed-t1-20261124T104212Z-f85c06cc`, `diag-speed-t2-20261124T112145Z-5004a314`, `diag-speed-t3-20261124T112218Z-181a9fbe` |
 | Stranding counters in the env (D32) | 4 096 envs × 204 s, 318 298 transitions, random velocity commands, zero action. Per 1000 transitions: steps 200.2; step accepted only at its goal 0.003; forced step because the current target failed 0.003; re-check forced step 0.009; kept goal 0. M1 candidates while moving: 0.10 m minimum rejected 0 of 134 108, wheel zone 12 (0.009 %). Matches the CPU emulation. No termination other than time-out. | `diag-speed-t3-20261124T112218Z-181a9fbe` |
 | T1/T2 regression after D39 and the drift-rule edit | **Pass.** T1 2.0.0 validation 8/8; metrics (73 390 rows incl. fault rows), trial summaries (120) and trajectories byte-identical to the T1 2.0.0 reference. T2 hold (6 000 episodes) and posture A3a (600) byte-identical to their references. | `diag-reg-t1-20261124T112949Z-b71abc16`, `diag-reg-t2-hold-20261124T113009Z-fc8a3eb9`, `diag-reg-t2-a3a-20261124T113009Z-e4b42e01` |
+| Training presets (D42), 4 096 envs, zero action, 7 000 steps | **Pass.** `train-t1`: standing fraction measured 1.000; goal modes M1 0 / M2 225 294 / M3 0 (100 % M2); 121 990 env steps/s; generator 3.5 ms per step. `train-t1t2`: standing 1.000; M1 52.5 % / M2 24.4 % / M3 23.1 % of 225 617 goals; 115 329 env steps/s; generator 3.8 ms. `train-t3`: standing 0.2004 (cfg 0.20); M1 52.6 % / M2 24.3 % / M3 23.0 % of 225 462 goals; 108 500 env steps/s; generator 5.4 ms (15 %). The accepted mix leans slightly to M1 versus the 0.50 / 0.25 / 0.25 draw weights because a draw whose mode has no stored successor at the current goal is redrawn. No terminations other than time-outs; no kept goals. M2-only masks 3 693 goals (goals without an M2 successor; all other presets 52, D34). CPU suite 19/19 incl. the new preset test. | `diag-preset-train-t1-20261124T122748Z-a2fffe83`, `diag-preset-train-t1t2-20261124T123221Z-d9fb942f`, `diag-preset-train-t3-20261124T123710Z-504a06ad`, `diag-cpu-presets2-20261124T122625Z-9c8c8653` (commit `db46599`) |
+| CPU suite, release tree (code 0.8.0) | **19/19 pass.** | `diag-cpu-final-20261124T124246Z-e45f755b` |
 
 ---
 
@@ -554,7 +559,9 @@ Simulator tests run through the existing launcher on an allocated GPU, in tmux, 
 |---|---|---|
 | 1 | Minimum target height 0.10 m while moving | Supervisor approval pending; binding rate reported (D31) |
 | 3 | Wheel K_d (s_w fixed by D22) | K_d = 20 (current asset config) |
-| 12 | Wheel turning: in the scripted test (open-loop differential wheel speeds, `eval_t3.py --controller drive`) the wheels alone produce no yaw (V5: e_ω ≈ 0.6 rad/s, the full command); cause unknown, pending the original developer's reply. Wheel controller, asset and physics settings unchanged until then. | A18 uses the scripted `carry` input (base moved kinematically) |
+| 12 | Wheel yaw authority (does not block the release): in the scripted test (open-loop differential wheel speeds, `eval_t3.py --controller drive`) the wheels alone produce no yaw (V5: e_ω ≈ 0.6 rad/s, the full command); cause unknown, pending the original developer's reply. Wheel controller, asset and physics settings unchanged until then. | A18 uses the scripted `carry` input (base moved kinematically) |
+| 13 | Payload ξ | Added with T4 as a separate privileged observation group; the policy observation layout does not change. |
+| 14 | T1 observation layout | The T1 environment (evaluation-only, D42) keeps its T1 1.0.0 observation group (89 dims, other order, no pose-error term, not concatenated), not the 95-dim layout of D40. Evaluating a policy trained on the 95-dim layout in T1 needs that layout rebuilt in the T1 evaluation (adapter or T1 version); T1 code is unchanged in `benchmark-suite-v1`. |
 
 Closed in v0.5: 4 (F2, F3 and the drift rule in T1: implemented, A14 passed 2026-11-23). Closed in v0.4: 6 (lowest base height, D26), 7 (pool size, D30), 8 (S3 success rule, D28), 9 (body box, D29), 10 (M2 margins, D28), 11 (A5 height coverage, D27). Closed earlier: 2 (D18/D25), 5 (Section 10).
 

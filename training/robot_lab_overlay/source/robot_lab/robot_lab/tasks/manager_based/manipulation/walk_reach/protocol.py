@@ -1,4 +1,4 @@
-"""T3 protocol constants (docs/protocols/T3_walk_and_reach_protocol.md, v0.4).
+"""T3 protocol constants (docs/protocols/T3_walk_and_reach_protocol.md, v0.8).
 
 Units: metres, radians, seconds. Quaternions wxyz. Frames: F_T (target frame: origin at base x/y and
 terrain + h_T, yaw of the base, z up), F_H (heading frame for velocities), B (base_link).
@@ -15,7 +15,7 @@ from pathlib import Path
 
 from ..reach_height import protocol as T2P
 
-VERSION = "0.4.0"
+VERSION = "0.8.0"   # protocol v0.8 (benchmark-suite-v1; final except open item 12)
 BENCHMARK = "T3-WALK-REACH"
 ROBOT_VARIANT = "B2W"
 
