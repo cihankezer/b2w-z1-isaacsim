@@ -40,7 +40,7 @@ LOGS = ROOT / "repos/robot_lab/logs"
 T2_MAP = Path(os.environ.get("T2_REACHABILITY_NPZ", str(
     LOGS / "t2/diag-reach-A1-v04r3-20261113T084127Z-1d029cc2/artifacts/reachability_T2_protocol.npz")))
 T1_TARGETS = Path(os.environ.get("T1_EVAL_TARGETS", str(
-    LOGS / "t1/diag-validate-v1c-20261112T142731Z-72ac7c0a/artifacts/validation/targets.json")))
+    LOGS / "t3/diag-t1v2-validate-20261123T204134Z-26af8a39/artifacts/validation/targets.json")))
 POOL_TRAIN = Path(os.environ.get("T3_POOL_TRAIN", str(LOGS / "t3" / P.POOL_FILES["train"])))
 POOL_EVAL = Path(os.environ.get("T3_POOL_EVAL", str(LOGS / "t3" / P.POOL_FILES["eval"])))
 EVAL_SET = Path(os.environ.get("T3_EVAL_SET", str(LOGS / "t3" / P.EVAL_SET_FILE)))

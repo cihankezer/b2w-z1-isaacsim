@@ -117,7 +117,7 @@ JOINT_LIMIT_FRACTION = 0.01
 
 # Seeds and frozen inputs
 T1_EVAL_SEED = 1101
-T1_EVAL_TARGETS_SHA256 = "505128a11752916727de056b049b87555cfdeb11981fcff27768eda2cadaf190"   # validate-v1c targets.json
+T1_EVAL_TARGETS_SHA256 = "908f0ad64c5a2d24ca7acfd3effceb688927014a68bd910a2fd1dd5807ba3c3d"   # T1 2.0.0 reference targets.json (v1c: 505128a1…f190, archived)
 T2_EVAL_SEED = T2P.EVAL_SEED
 T2_EVAL_SET_SHA256 = T2P.EVAL_SET_SHA256
 TRAIN_POOL_SEED = 3101   # M1 candidates + segment draws; M2 uses the T1 rule with this seed (T1 used 1101, 1102)
@@ -130,7 +130,7 @@ POOL_SIZES = dict(train=dict(M1=15000, M2=7500, M3=7500, successors=8, max_candi
 # All artifacts (v0.3 and v0.4) are listed with path, size and SHA-256 in data/artifacts_manifest.json.
 POOL_FILES = dict(train="diag-pool-v4-train-20261123T130844Z-d65b4fdb/artifacts/t3_pool_train.npz",
                   eval="diag-pool-v4-eval-20261123T130847Z-ff4cfa08/artifacts/t3_pool_eval.npz")
-EVAL_SET_FILE = "diag-eval-set-v4-20261123T194833Z-8ffa059e/artifacts/t3_eval_set_v4.npz"
+EVAL_SET_FILE = "diag-eval-set-v5-20261124T073730Z-cf80791b/artifacts/t3_eval_set_v5.npz"   # v5: S1 from T1 2.0.0 (v4 superseded)
 TRAIN_POOL_SHA256 = "6e4a18f7fc531e1cb9799efa99c0dee9f63ff9e222a766f0a3cc5118fc270c70"
 EVAL_POOL_SHA256 = "86b45c40638009b40250d92595b6f3697bfe55543c7bebf365d59f923001d911"
-EVAL_SET_SHA256 = "779f76ff769cb36684c0489d9ed3f7f6f8ced798c7eea7e8ff9c97936c8f7658"
+EVAL_SET_SHA256 = "0a7dd22d8d7bf3fcee335b70e658d12b990d52399c0c8f07c0fd0bf6cd0d4151"

@@ -1,7 +1,7 @@
 """Build the fixed T3 evaluation set (protocol v0.3 §7.4). CPU only, no SimulationApp.
 
 Inputs (hash-checked): T1 evaluation targets (seed 1101), frozen T2 map (T2 eval set regenerated, seed 2026),
-T3 evaluation goal pool. Writes t3_eval_set_v4.npz and .json to --out.
+T3 evaluation goal pool. Writes t3_eval_set_v5.npz and .json to --out.
 
 Run: LAUNCH_TASK=t3 evaluation/diagnostics/launch.sh cpu eval-set 1800 evaluation/build_t3_eval_set.py \
        --pool /workspace/<run>/artifacts/t3_pool_eval.npz --out /t1-run/artifacts
@@ -19,7 +19,7 @@ from measure_t3 import FROZEN_MAP, module  # noqa: E402  (imports usd_loader fir
 import numpy as np  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
-T1_TARGETS = ROOT / "repos/robot_lab/logs/t1/diag-validate-v1c-20261112T142731Z-72ac7c0a/artifacts/validation/targets.json"
+T1_TARGETS = ROOT / "repos/robot_lab/logs/t3/diag-t1v2-validate-20261123T204134Z-26af8a39/artifacts/validation/targets.json"
 
 
 def inputs(t1_path, map_path, pool_path):
@@ -55,8 +55,8 @@ def main():
     arrays, meta = E.build(*inputs(args.t1_targets, args.map, args.pool))
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(out / "t3_eval_set_v4.npz", metadata=json.dumps(meta), **arrays)
-    (out / "t3_eval_set_v4.json").write_text(json.dumps(meta, indent=1))
+    np.savez_compressed(out / "t3_eval_set_v5.npz", metadata=json.dumps(meta), **arrays)
+    (out / "t3_eval_set_v5.json").write_text(json.dumps(meta, indent=1))
     print(json.dumps({k: v for k, v in meta.items() if k != "t1_target_ids"}, indent=1))
     assert pool.digest(arrays) == meta["eval_set_sha256"]
 

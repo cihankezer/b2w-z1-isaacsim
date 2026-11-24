@@ -41,7 +41,16 @@
    "path": "diag-eval-set-v4-20261123T194833Z-8ffa059e/artifacts/t3_eval_set_v4.npz",
    "size_bytes": 100025,
    "file_sha256": "f98cc2ed794f5d693fe465518f6fb28c6cb4450d1c8ba8ec2157fe9301cb0f9a",
-   "digest_sha256": "779f76ff769cb36684c0489d9ed3f7f6f8ced798c7eea7e8ff9c97936c8f7658"
+   "digest_sha256": "779f76ff769cb36684c0489d9ed3f7f6f8ced798c7eea7e8ff9c97936c8f7658",
+   "superseded_by": "eval_set_v05"
+  },
+  "eval_set_v05": {
+   "path": "diag-eval-set-v5-20261124T073730Z-cf80791b/artifacts/t3_eval_set_v5.npz",
+   "size_bytes": 100040,
+   "file_sha256": "1de666a29b32b0c0ffbc7a299074df89f64a01724345262a9ed04e27279d855b",
+   "digest_sha256": "0a7dd22d8d7bf3fcee335b70e658d12b990d52399c0c8f07c0fd0bf6cd0d4151",
+   "t1_targets_sha256": "908f0ad64c5a2d24ca7acfd3effceb688927014a68bd910a2fd1dd5807ba3c3d",
+   "check_vs_v04": "diag-eval-set-v5-compare-20261124T073734Z-834cd4f5: S1 max |dpos| 2.2e-16 m, max |dq| 0; all other arrays identical"
   }
  }
 }

@@ -4,7 +4,7 @@
 |---|---|
 | Task ID | T3 (Benchmark Task Suite, WP1) |
 | Document type | Implementation specification for the simulation environment |
-| Version | v0.5 (decisions D1–D37 frozen, see Section 0) |
+| Version | v0.6 (decisions D1–D38 frozen, see Section 0) |
 | Date | 2026-11-23 |
 | Platform | Unitree B2W + Unitree Z1, Isaac Lab v2.3.2 on Isaac Sim 5.1 |
 | Depends on | T1 (6D EE tracking while standing), T2 (low/high reach) |
@@ -56,6 +56,7 @@ These decisions are frozen. D1–D11 answer the questions of the first T3 plan; 
 | D35 | Moving minimum is a guard | The 0.10 m moving minimum (D31) stays as a guard. It is non-binding for pool v4: 0 of 15 000 M1 goals lie below 0.10 m. | 6.3 |
 | D36 | Per-height-band reporting | Evaluation outputs include a table per T2 height band (low 0–0.30, mid 0.30–0.80, high 0.80–1.10 m, target height above the terrain) plus an `outside` row (> 1.10 m): e_pos, e_ori and hold success. | 9 |
 | D37 | T2 version | T2 is bumped to 1.1.0 for the wheel channel (D22) and the shared termination set (D6). Its A7/A3a results are byte-identical to 1.0.0 (A15, A14). | 4.3 |
+| D38 | Evaluation set v5 | S1 is built from the T1 2.0.0 reference target file (`ee_frame: tcp`, SHA-256 `908f0ad6…3c3d`) instead of v1c, so A10 compares against the current T1 reference. The builder accepts only a T1 2.0.0 file. v5 must equal v4 except for float rounding in S1 (every S1 target within 1e-9 in position and quaternion; all other arrays identical). v4 stays listed as superseded. | 7.4, 11 |
 
 ### 0.1 Change log
 
@@ -65,6 +66,7 @@ These decisions are frozen. D1–D11 answer the questions of the first T3 plan; 
 | v0.2 | Decisions D1–D11. Removed S2 (circle), E-DR, spherical M1 sampling and the 6D reachability map. Added shared terminations, standing drift, wheel interface, nominal deviation metric. |
 | v0.3 | Decisions D12–D25. Feasibility table and collision-checked FK goal pool; joint-space interpolation for all training goals; 20 % step transitions; M2 = T1 fixed points; S1/S3 inherit the T1/T2 schedules (S1: 2 points × 5 s, S3: 1 target × 10 s); geodesic orientation error; s_w = 10 rad/s; A6 CPU, A9 map postures, A15 regression, A17 contact filter; measured values of Section 10 filled in; online step rules of Sec. 6.3; new open items 6–10 (Section 13). |
 | v0.5 | Decisions D33–D37: T1 version and step-4 regression rule (D33), dead-end mask (D34), moving minimum as a non-binding guard (D35), per-height-band table (D36), T2 1.1.0 (D37). Artifacts pinned: training pool `6e4a18f7…0c70`, evaluation pool `86b45c40…d911`, evaluation set v4 `779f76ff…7658`. A14 and A15 passed (Section 11). |
+| v0.6 | D38: evaluation set v5 (S1 from T1 2.0.0), digest `0a7dd22d…4151`; v4 superseded. |
 | v0.4 | Decisions D26–D32. Body box removed (D29); h_T2_min = 0.324 m, h_fall = 0.274 m (D26); M3 height stratification (D27); inheritance of success rule and clearance margins, M2 with T1 margins, S1 unfiltered (D28); training pool ≈ 30 000 goals (D30); stranding-rule logging (D32); evaluation set v4. Open items 6–11 closed or updated. |
 
 ---
@@ -350,7 +352,7 @@ Evaluation scenarios inherit the schedule of their source task; T3 only adds the
 
 | ID | Source | Schedule in the 10 s test phase | Scored ("hold") window |
 |---|---|---|---|
-| S1 | T1 fixed targets, T1 evaluation target set (seed 1101, file SHA-256 `505128a1…f190`), converted to the TCP frame and F_T; unfiltered except by the moving-cell rules (D28) | **2 points**, each a step target held 5 s (T1 schedule) | last 2 s of each point (T1 steady window) |
+| S1 | T1 fixed targets, T1 2.0.0 evaluation target set (seed 1101, file SHA-256 `908f0ad6…3c3d`, `ee_frame: tcp`; D38), converted to F_T; unfiltered except by the moving-cell rules (D28) | **2 points**, each a step target held 5 s (T1 schedule) | last 2 s of each point (T1 steady window) |
 | S3 | T2 evaluation target set (regenerated from the frozen map, seed 2026, T2 `EVAL_SET_SHA256`), shifted into F_T | **1 target**, step, held 10 s (T2 schedule: `EPISODE_S` = 10 s) | last 1.0 s (T2 `HOLD_S`) |
 | S4 | M1 generator on the evaluation pool (seed disjoint from training) | Continuous goal chain from p_home, training transition rule (D16) and online checks (Sec. 6.3) | none (all-window metrics only) |
 
@@ -381,7 +383,7 @@ Evaluation scenarios inherit the schedule of their source task; T3 only adds the
 | Stress | 3 profiles × 3 scenarios = 9 | 9 × 64 = 576 |
 | Per method | 3 policy seeds | (1536 + 576) × 3 = 6336 |
 
-The full list is generated once (`evaluation/build_t3_eval_set.py`, seed 3301) and stored as `t3_eval_set_v4.npz` with its SHA-256 digest (pinned in `walk_reach/protocol.py`). Results MUST cite the version and digest.
+The full list is generated once (`evaluation/build_t3_eval_set.py`, seed 3301) and stored as `t3_eval_set_v5.npz` (v0.6, D38; v4 superseded) with its SHA-256 digest (pinned in `walk_reach/protocol.py`). Results MUST cite the version and digest.
 
 ---
 
@@ -514,7 +516,9 @@ Simulator tests run through the existing launcher on an allocated GPU, in tmux, 
 | CPU suite (A1–A7, A13, A16, pool, sampler) | **18/18 pass** on the v0.4 artifacts: 17 in the full run; `test_pool_segments_recheck` failed there because it re-checked M2 segments with T2 margins (stale test, fixed to the D28 margins) and passed in the re-run with the other changed tests. A5 passes (height stratification, D27). | `diag-cpu-suite-v4-20261123T195054Z-1bf982e5`, `diag-cpu-recheck-20261123T195851Z-d61d35f9` |
 | Stranding counters (CPU emulation, 4 096 envs × 200 s, 311 880 transitions) | Per 1000 transitions: steps 199.7; step accepted only at its goal 0.003; forced step because the current target failed 0.003; re-check forced step 0.003; kept goal 0. M1 candidates while moving: 0.10 m minimum rejected 0 of 130 907 (non-binding, D35), wheel zone rejected 20 (0.015 %). Dead-end mask: 52 goals masked, none drawn. To be repeated in the Isaac training env (step 5). | `diag-sampler-v4-20261123T195054Z-f3d5641a` |
 | A14 | **Pass.** Shared termination set in T1 and T2: T2 hold and A3a byte-identical to the references; T1 validation 8/8 incl. the new fault tests (tilt stops on the 5th step only, injected 0.2 m height on the 5th evaluation only, 0.31 m drift); all non-fault T1 rows byte-identical to v1c (73 374 rows, 120 trials). F2, F3 and D never fired. | `diag-a14-t1-20261123T170135Z-cfb5c47b`, `diag-a14-t2-hold-20261123T170155Z-f955e4e0`, `diag-a14-t2-a3a-20261123T170155Z-2ccd0aab` |
-| Step 4: T1 2.0.0 (TCP switch) | **Pass.** Validation 8/8 (48.8 min, commit `9296146`). D33 regression vs v1c: 73 374 trial rows matched, orientation error identical in all rows, failure reasons identical, \|e_pos_tcp − e_pos_flange\| ≤ 0.171·θ_geo + 1e-6 in all rows (max violation 0.0 m, max \|Δe_pos\| 0.314 m). This run is the new T1 reference; v1c stays archived. The T3 evaluation set v4 (S1) keeps its pinned v1c target source, converted to the TCP frame. | `diag-t1v2-validate-20261123T204134Z-26af8a39` |
+| Step 4: T1 2.0.0 (TCP switch) | **Pass.** Validation 8/8 (48.8 min, commit `9296146`). D33 regression vs v1c: 73 374 trial rows matched, orientation error identical in all rows, failure reasons identical, \|e_pos_tcp − e_pos_flange\| ≤ 0.171·θ_geo + 1e-6 in all rows (max violation 0.0 m, max \|Δe_pos\| 0.314 m). This run is the new T1 reference; v1c stays archived. | `diag-t1v2-validate-20261123T204134Z-26af8a39` |
+| Evaluation set v5 (D38) | **Pass.** Built from the T1 2.0.0 targets (3.6 s, CPU). Against v4: 704 S1 episodes, S1 max \|Δpos\| 2.2e-16 m, max \|Δq\| 0 (tolerance 1e-9); every other array identical. Array digest `0a7dd22d8d7bf3fcee335b70e658d12b990d52399c0c8f07c0fd0bf6cd0d4151`, file SHA-256 `1de666a2…855b`. | `diag-eval-set-v5-20261124T073730Z-cf80791b`, `diag-eval-set-v5-compare-20261124T073734Z-834cd4f5` |
+| CPU suite on v5 | **18/18 pass** (A13 regenerates the v5 digest from the T1 2.0.0 targets). | `diag-cpu-t3-v5-20261124T073809Z-179ac298` |
 
 ---
 

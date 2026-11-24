@@ -46,10 +46,10 @@ def nominal_ft():
 
 
 def t1_targets_T(data):
-    """T1 fixed targets (link06 world poses at the nominal state) -> TCP poses in F_T: ids, (n, 7)."""
+    """T1 2.0.0 fixed targets (TCP world poses at the nominal state, ee_frame tcp) -> TCP poses in F_T: ids, (n, 7)."""
+    if data["ee_frame"] != "tcp" or tuple(data["tcp_offset_m"]) != tuple(P.TCP_OFFSET_M):
+        raise ValueError("T1 target file must be T1 2.0.0 (ee_frame tcp, same TCP offset)")
     F_inv = np.linalg.inv(nominal_ft())
-    tcp = np.eye(4)
-    tcp[:3, 3] = P.TCP_OFFSET_M
     ids, poses = [], []
     for t in data["targets"]:
         if t["family"] != "fixed":
@@ -58,7 +58,7 @@ def t1_targets_T(data):
         q = t["quaternion_world_wxyz"]
         T[:3, :3] = Rotation.from_quat([q[1], q[2], q[3], q[0]]).as_matrix()
         T[:3, 3] = t["position_world_xyz"]
-        X = F_inv @ T @ tcp
+        X = F_inv @ T
         ids.append(t["target_id"])
         poses.append(np.r_[X[:3, 3], Rotation.from_matrix(X[:3, :3]).as_quat(canonical=True)[[3, 0, 1, 2]]])
     return ids, np.array(poses)
@@ -150,7 +150,7 @@ def build(t1_data, t2_arrays, pool_arrays, seed=P.EVAL_SET_SEED, n=P.EPISODES_PE
     arrays = {k: np.asarray(v) if k not in ("cell_V", "cell_S") else np.asarray(v, dtype="U2") for k, v in rows.items()}
     arrays["cmd"] = arrays["cmd"].astype(float)
     arrays["s4_nodes"] = arrays["s4_nodes"].astype(np.int64)
-    meta = dict(benchmark=P.BENCHMARK, protocol_version=P.VERSION, version="t3_eval_set_v4", seed=int(seed),
+    meta = dict(benchmark=P.BENCHMARK, protocol_version=P.VERSION, version="t3_eval_set_v5", seed=int(seed),
                 episodes_per_cell=int(n), cells=[[v, list(cmd), s] for v, cmd, s in cells()],
                 p_home_T=list(P.P_HOME_T), settle_s=P.SETTLE_S, test_s=P.TEST_S,
                 s1_schedule=P.S1_SCHEDULE, s3_schedule=P.S3_SCHEDULE, frame="F_T", tcp_offset_m=list(P.TCP_OFFSET_M),
