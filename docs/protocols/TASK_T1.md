@@ -101,6 +101,11 @@ The draft.3 visual/CAD-mesh metric is dropped. Results under draft.3/4/5/7 must 
   |e_pos_tcp − e_pos_flange| ≤ 0.171·θ_geo + 1e-6 (`evaluation/t1_tcp_regression.py`). The 1.0.0 target
   file and run `diag-validate-v1c-20261112T142731Z-72ac7c0a` stay archived; the 2.0.0 validation run
   becomes the new T1 reference.
+- *2.0.0 reference run (verified at runtime, 2026-11-23):* `repos/robot_lab/logs/t3/diag-t1v2-validate-20261123T204134Z-26af8a39`
+  (commit `9296146`, clean tree, 48.8 min), **PASS 8/8**; `targets.json` (`ee_frame: tcp`) SHA-256 `908f0ad6…3c3d`.
+  Regression vs 1.0.0: 73 374 trial rows matched one-to-one, orientation mismatches 0, failure-reason
+  mismatches 0, bound violations 0, max violation 0.0 m (bound never exceeded), max |Δe_pos| 0.314 m
+  (`t1_tcp_regression.json` in the run directory).
 
 **Protocol 1.0.0 decisions (2026-11-12; researcher).**
 
@@ -579,7 +584,7 @@ checklist. It produces `validation_report.json`, the seed-1101 `targets.json` sa
 by the first evaluation repetition, `trajectories.csv`, `metrics.csv`, `config.yaml` and
 `trial_summary.csv`, retaining the underlying raw artifacts. Overall `PASS`
 requires eight executed, passing groups and finished child processes (`completion.json`; draft.7 decision C); the
-evaluation children use the oracle controller. Status: **PASS 8/8** (`diag-validate-v1c-20261112T142731Z-72ac7c0a`); blocked
+evaluation children use the oracle controller. Status: **PASS 8/8** (1.0.0: `diag-validate-v1c-20261112T142731Z-72ac7c0a`; 2.0.0 reference: `diag-t1v2-validate-20261123T204134Z-26af8a39`); blocked
 or missing checks cannot pass. `--cpu-only` deliberately reports incomplete
 validation. It introduces recorded **[PROPOSED]** repeatability tolerances of
 `1e-4 m` / `1e-4 rad`; target/reference comparisons use `1e-9` in stored units.
