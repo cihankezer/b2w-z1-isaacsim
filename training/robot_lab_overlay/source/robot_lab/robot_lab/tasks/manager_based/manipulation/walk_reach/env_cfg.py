@@ -12,7 +12,7 @@ T3WalkReachEvalEnvCfg  benchmark: deterministic T1 nominal reset, settle 2 s + t
 Training presets (D42). The T3 environment is the single training environment of the suite; the T1 and T2
 environments are evaluation-only. All presets share the action, the 95-dim observation and the termination set;
 they differ only in the standing fraction of the velocity command and the goal-mode weights:
-  TrainT1EnvCfg    train-t1    standing fraction 1.0, goal modes M2 only
+  TrainT1EnvCfg    train-t1    standing fraction 1.0, goal modes M2 only; step from goals without an M2 successor (D43)
   TrainT1T2EnvCfg  train-t1t2  standing fraction 1.0, goal modes M1 + M2 + M3 (protocol weights)
   TrainT3EnvCfg    train-t3    full T3 distribution (protocol standing fraction and weights)
 """
@@ -89,6 +89,7 @@ class TrainT1EnvCfg(T3WalkReachEnvCfg):
     def __post_init__(self):
         super().__post_init__()
         _preset(self, 1.0, (0.0, 1.0, 0.0))
+        self.commands.tcp_target.fallback_step = True     # D43: no M2 goal lost to masking
 
 
 @configclass

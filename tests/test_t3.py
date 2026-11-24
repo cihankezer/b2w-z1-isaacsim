@@ -431,3 +431,23 @@ def test_training_preset_mode_restriction(train_pool):
     c = gs.rates()["counts"]
     assert c["transitions"] > 1000 and c["mode_M2"] == c["transitions"] and c["kept_goal"] == 0
     assert bool((pool.mode[gs.goal_node] == 2).all())
+
+
+@needs(POOL_TRAIN)
+def test_train_t1_fallback_step(train_pool):
+    """D43: with fallback steps, train-t1 draws only M2 goals, never keeps a goal, and reaches M2 goals that the
+    mode-restricted successor graph (D42 masking) cannot reach."""
+    arrays, _ = train_pool
+    pool = GOALS.GoalPool(arrays)
+    restricted = GOALS.GoalPool(arrays, modes=(2,))
+    gs = GOALS.GoalSampler(pool, 512, generator=torch.Generator().manual_seed(6), fk=KIN.ArmFK(),
+                           mode_weights=(0.0, 1.0, 0.0), fallback_step=True)
+    gs.reset(torch.arange(512))
+    seen = torch.zeros(len(pool.mode), dtype=torch.bool)
+    for _ in range(1500):
+        gs.update(P.CONTROL_DT_S, torch.zeros(512, dtype=torch.bool))
+        seen[gs.goal_node] = True
+    c = gs.rates()["counts"]
+    assert c["transitions"] > 1000 and c["mode_M2"] == c["transitions"] and c["kept_goal"] == 0
+    assert c["fallback_step"] > 0 and c["steps"] >= c["fallback_step"]
+    assert bool((seen & restricted.dead_end & (pool.mode == 2)).any())

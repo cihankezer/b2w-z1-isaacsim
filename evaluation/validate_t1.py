@@ -382,7 +382,7 @@ def main(argv=None):
     args.out = args.out.resolve()
     args.out.mkdir(parents=True,exist_ok=False)
     report = new_report(args.cpu_only)
-    config = dict(protocol_version="2.0.0",robot="B2W+Z1",tcp="tcp (link06 + 0.171 m x)",seed=1101,device=args.device,
+    config = dict(protocol_version="2.1.0",robot="B2W+Z1",tcp="tcp (link06 + 0.171 m x)",seed=1101,device=args.device,
                   nominal_hold_s=30,physics_dt_s=.005,control_dt_s=.02,controller="oracle",tolerances=TOLERANCES,
                   tolerances_status="PROPOSED; fixed before the run",mode=report["mode"],
                   image_id=os.environ.get("T1_IMAGE_ID"),gpu_uuid=os.environ.get("ISAAC_GPU_UUID"),

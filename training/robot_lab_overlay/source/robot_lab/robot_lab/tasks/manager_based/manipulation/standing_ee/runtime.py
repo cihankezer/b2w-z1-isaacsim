@@ -94,10 +94,17 @@ class StandingCommand(CommandTerm):
                                                 preserve_order=True)[0]
         self.wheel_ids = self.robot.find_joints(WHEELS, preserve_order=True)[0]
         self._command = torch.zeros(env.num_envs, 7, device=env.device)
+        self.tcp_offset = torch.tensor(TCP_OFFSET_M, device=env.device).repeat(env.num_envs, 1)
 
     @property
     def command(self):
         return self._command
+
+    def tcp_pose_w(self):
+        """Measured TCP pose in W (2.1.0, shared suite observation): link06 position + R(q) offset, link06 quaternion."""
+        d = self.robot.data
+        q = d.body_quat_w[:, self.hand]
+        return d.body_pos_w[:, self.hand] + quat_apply(q, self.tcp_offset), q
 
     def assign(self, i, target):
         """Give env i a sampled target (env-frame poses shifted by the env origin); None = nominal hold."""
@@ -152,17 +159,6 @@ class StandingCommand(CommandTerm):
 class StandingCommandCfg(CommandTermCfg):
     class_type: type = StandingCommand
     resampling_time_range: tuple = (1e9, 1e9)
-
-
-def measured_ee(env):
-    """TCP pose in the base frame (2.0.0; 1.0.0: link06)."""
-    robot = env.scene["robot"]
-    hand = robot.find_bodies(["link06"])[0][0]
-    q_hand = robot.data.body_quat_w[:, hand]
-    offset = torch.tensor(TCP_OFFSET_M, device=env.device, dtype=q_hand.dtype).expand(env.num_envs, 3)
-    p, q = subtract_frame_transforms(robot.data.root_pos_w, robot.data.root_quat_w,
-                                    robot.data.body_pos_w[:, hand] + quat_apply(q_hand, offset), q_hand)
-    return torch.cat([p, q], dim=1)
 
 
 def zero_velocity_goal(env):

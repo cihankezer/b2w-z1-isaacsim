@@ -13,8 +13,7 @@ import torch
 
 from isaaclab.managers import CommandTerm, CommandTermCfg, ManagerTermBase
 from isaaclab.utils import configclass
-from isaaclab.utils.math import (axis_angle_from_quat, matrix_from_quat, quat_apply, quat_conjugate, quat_mul,
-                                 subtract_frame_transforms)
+from isaaclab.utils.math import matrix_from_quat, quat_apply, subtract_frame_transforms
 
 from . import protocol as P
 from .sampler import ReachableSet
@@ -116,19 +115,7 @@ class ReachTargetCommandCfg(CommandTermCfg):
 
 # ---------------------------------------------------------------- observations (policy, frame B)
 
-def tcp_pose_body(env):
-    """Measured TCP pose in B: position + quaternion wxyz (7)."""
-    cmd, d = env.command_manager.get_term(COMMAND), env.scene["robot"].data
-    p_w, q_w = cmd.tcp_pose_w()
-    p, q = subtract_frame_transforms(d.root_pos_w, d.root_quat_w, p_w, q_w)
-    return torch.cat([p, q], dim=1)
-
-
-def tcp_pose_error_body(env):
-    """Target minus measured TCP in B: position (3) and rotation as axis-angle of q_goal * q_tcp^-1 (3)."""
-    goal, tcp = env.command_manager.get_command(COMMAND), tcp_pose_body(env)
-    rot = axis_angle_from_quat(quat_mul(goal[:, 3:], quat_conjugate(tcp[:, 3:])))
-    return torch.cat([goal[:, :3] - tcp[:, :3], rot], dim=1)
+# tcp_pose_body, tcp_pose_error_body: shared suite observation (standing_ee.observations, T3 D40).
 
 
 def band_one_hot(env):

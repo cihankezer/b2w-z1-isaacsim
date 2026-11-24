@@ -69,15 +69,20 @@ def moving_reason(fk, g, wheels_xy, h_knee=P.H_KNEE_M, parts=False):
 
 COUNTERS = ("transitions", "steps", "rule_step_goal_only", "rule_forced_step_current_bad", "rule_recheck_forced_step",
             "kept_goal", "m1_candidates_moving", "m1_rejected_min_height_moving", "m1_rejected_wheel_moving",
-            "mode_M1", "mode_M2", "mode_M3")
+            "mode_M1", "mode_M2", "mode_M3", "fallback_step")
 
 
 class GoalSampler:
-    def __init__(self, pool, num_envs, device="cpu", generator=None, fk=None, mode_weights=P.MODE_WEIGHTS):
+    def __init__(self, pool, num_envs, device="cpu", generator=None, fk=None, mode_weights=P.MODE_WEIGHTS,
+                 fallback_step=False):
         self.pool, self.n, self.device, self.gen = pool, num_envs, device, generator
         self.fk = fk or ArmFK(device)
         self.wheels_xy = torch.tensor(P.WHEEL_CONTACT_T_XY, dtype=torch.float32, device=device)
         self.weights = torch.tensor(mode_weights, dtype=torch.float32, device=device)   # M1, M2, M3 (D42)
+        # D43 (train-t1): if the current goal has no stored successor of the drawn mode, step (T_traj = 0) to a
+        # random goal of that mode instead (a step needs no stored segment). Off for the other presets.
+        self.fallback = fallback_step
+        self.mode_goals = {m: ((pool.mode == m) & ~pool.dead_end).nonzero(as_tuple=True)[0] for m in (1, 2, 3)}
         z = lambda dt=torch.float32: torch.zeros(num_envs, dtype=dt, device=device)  # noqa: E731
         self.start_node, self.goal_node = z(torch.long), z(torch.long)
         self.g_start = pool.g[self.goal_node].clone()
@@ -168,7 +173,18 @@ class GoalSampler:
             has = match.any(dim=1)
             pick = torch.multinomial(match.float() + (~has[:, None]).float(), 1, generator=self.gen)[:, 0]
             cand = succ[torch.arange(len(idx), device=self.device), pick]
-            step = force_step[idx] | (self._rand(len(idx)) < P.STEP_FRACTION)
+            fb = torch.zeros_like(has)
+            if self.fallback and not bool(has.all()):
+                fb = ~has
+                for m in (1, 2, 3):
+                    rows = fb & (mode == m)
+                    goals = self.mode_goals[m]
+                    if bool(rows.any()) and len(goals):
+                        cand[rows] = goals[torch.randint(len(goals), (int(rows.sum()),), device=self.device,
+                                                         generator=self.gen)]
+                fb = fb & (cand >= 0)
+                has = has | fb
+            step = force_step[idx] | (self._rand(len(idx)) < P.STEP_FRACTION) | fb
             seg_ok, full_ok = self._segment_ok(idx, g_from[idx], self.pool.g[cand.clamp(min=0)], step, moving[idx],
                                                torch.where(has, self.pool.mode[cand.clamp(min=0)], -1))
             ok = has & seg_ok
@@ -178,6 +194,7 @@ class GoalSampler:
             c["steps"] += int((ok & step).sum())
             c["rule_step_goal_only"] += int((ok & step & moving[idx] & ~full_ok).sum())
             c["rule_forced_step_current_bad"] += int((ok & cur_bad[idx]).sum())
+            c["fallback_step"] += int((ok & fb).sum())
             for m in (1, 2, 3):
                 c[f"mode_M{m}"] += int((ok & (self.pool.mode[cand.clamp(min=0)] == m)).sum())
             e = env_ids[acc]

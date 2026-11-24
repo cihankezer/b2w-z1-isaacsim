@@ -4,7 +4,7 @@ import isaaclab.envs.mdp as mdp
 import isaaclab.sim as sim_utils
 from isaaclab.assets import AssetBaseCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
-from isaaclab.managers import EventTermCfg, ObservationGroupCfg, ObservationTermCfg, RecorderTermCfg
+from isaaclab.managers import EventTermCfg, ObservationTermCfg, RecorderTermCfg
 from isaaclab.managers import SceneEntityCfg, TerminationTermCfg
 from isaaclab.managers.recorder_manager import DatasetExportMode, RecorderManagerBaseCfg
 from isaaclab.scene import InteractiveSceneCfg
@@ -37,8 +37,9 @@ T1_ROBOT_CFG = UNITREE_B2W_Z1_STANDING_CFG.replace(
     actuators={**UNITREE_B2W_Z1_STANDING_CFG.actuators,
                "gripper": ImplicitActuatorCfg(joint_names_expr=["jointGripper"], stiffness=GRIP_KP, damping=GRIP_KD)},
 )
-from .runtime import (JOINTS, StandingActionCfg, StandingCommandCfg, StandingFailure,
-                      StepRecorder, measured_ee, time_out, zero_velocity_goal)
+from .observations import SuitePolicyCfg, tcp_pose_body, tcp_pose_error_body
+from .runtime import (StandingActionCfg, StandingCommandCfg, StandingFailure,
+                      StepRecorder, time_out)
 from .terminations import DEBOUNCE_STEPS, DRIFT_M, FALL_HEIGHT_M, FALL_TILT_RAD
 
 
@@ -65,23 +66,13 @@ class ActionsCfg:
 @configclass
 class ObservationsCfg:
     @configclass
-    class StateCfg(ObservationGroupCfg):
-        joint_pos = ObservationTermCfg(func=mdp.joint_pos_rel,
-            params={"asset_cfg": SceneEntityCfg("robot", joint_names=JOINTS, preserve_order=True)})
-        joint_vel = ObservationTermCfg(func=mdp.joint_vel,
-            params={"asset_cfg": SceneEntityCfg("robot", joint_names=JOINTS, preserve_order=True)})
-        base_ang_vel = ObservationTermCfg(func=mdp.base_ang_vel)
-        projected_gravity = ObservationTermCfg(func=mdp.projected_gravity)
-        ee_pose_body = ObservationTermCfg(func=measured_ee)
-        previous_action = ObservationTermCfg(func=mdp.last_action)
-        ee_goal_body = ObservationTermCfg(func=mdp.generated_commands, params={"command_name": "ee_pose"})
-        base_velocity_goal = ObservationTermCfg(func=zero_velocity_goal)
+    class PolicyCfg(SuitePolicyCfg):
+        # 2.1.0: shared 95-dim suite observation (T3 D40), velocity-goal slot zero; T1's goal command is `ee_pose`.
+        tcp_goal_body = ObservationTermCfg(func=mdp.generated_commands, params={"command_name": "ee_pose"})
+        tcp_pose_body = ObservationTermCfg(func=tcp_pose_body, params={"command_name": "ee_pose"})
+        tcp_pose_error_body = ObservationTermCfg(func=tcp_pose_error_body, params={"command_name": "ee_pose"})
 
-        def __post_init__(self):
-            self.concatenate_terms = False
-            self.enable_corruption = False
-
-    policy = StateCfg()
+    policy = PolicyCfg()
 
 
 @configclass

@@ -158,6 +158,10 @@ def speed(env, mods, result, torch, np, task, steps, warmup=20):
     tm = env.termination_manager
     counts = {k: 0 for k in tm.active_terms}
     standing = torch.zeros((), dtype=torch.float64, device=dev)   # env-steps with a zero velocity command (t3)
+    visited = None                                                 # pool goals that were an active goal (t3)
+    if task == "t3":
+        cmd_t = env.command_manager.get_term(mods["runtime"].COMMAND)
+        visited = torch.zeros(len(cmd_t.pool.mode), dtype=torch.bool, device=dev)
     seen = [0]
 
     def run(k):
@@ -167,6 +171,7 @@ def speed(env, mods, result, torch, np, task, steps, warmup=20):
             env.step(zero)
             if task == "t3":
                 standing.add_((env.command_manager.get_command("base_velocity") == 0).all(dim=1).sum())
+                visited[cmd_t.sampler.goal_node] = True
                 seen[0] += n
             for name in counts:
                 counts[name] += int(tm.get_term(name).sum())
@@ -196,7 +201,10 @@ def speed(env, mods, result, torch, np, task, steps, warmup=20):
             standing_fraction_measured=float(standing) / max(seen[0], 1),
             mode_weights_cfg=list(env.cfg.commands.tcp_target.mode_weights), goal_mode_counts=modes,
             goal_mode_fractions={m: v / max(sum(modes.values()), 1) for m, v in modes.items()},
-            masked_dead_end_goals=int(cmd.pool.dead_end.sum()))
+            masked_dead_end_goals=int(cmd.pool.dead_end.sum()),
+            fallback_step=bool(env.cfg.commands.tcp_target.fallback_step),
+            visited_goals_by_mode={f"M{m}": int((visited & (cmd.pool.mode == m)).sum()) for m in (1, 2, 3)},
+            pool_goals_by_mode={f"M{m}": int((cmd.pool.mode == m).sum()) for m in (1, 2, 3)})
         result["stranding"]["sim_steps"] = steps + warmup + k
         result["stranding"]["sim_time_s_per_env"] = (steps + warmup + k) * env.step_dt
     result["terminations"] = counts

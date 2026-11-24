@@ -12,21 +12,18 @@ T2ReachEvalEnvCfg  benchmark: deterministic T1 nominal reset (§4.4), few envs
 import math
 
 import isaaclab.envs.mdp as mdp
-from isaaclab.managers import EventTermCfg, ObservationGroupCfg, ObservationTermCfg, SceneEntityCfg
+from isaaclab.managers import EventTermCfg, SceneEntityCfg
 from isaaclab.managers import TerminationTermCfg
 from isaaclab.managers.recorder_manager import RecorderManagerBaseCfg
 from isaaclab.utils import configclass
 
 from ..standing_ee.env_cfg import EventsCfg as T1EventsCfg
 from ..standing_ee.env_cfg import ActionsCfg, SceneCfg, StandingEnvCfg
-from ..standing_ee.runtime import JOINTS, zero_velocity_goal
+from ..standing_ee.observations import SuitePolicyCfg
 from . import protocol as P
-from .runtime import (COMMAND, GroundClearance, IllegalContact, ReachTargetCommandCfg, invalid_state,
-                      tcp_pose_body, tcp_pose_error_body)
+from .runtime import GroundClearance, IllegalContact, ReachTargetCommandCfg, invalid_state
 from ..standing_ee.terminations import (FALL_HEIGHT_M, FALL_TILT_RAD, DebouncedHeight, DebouncedTilt,
                                         StandingDrift)
-
-_JOINTS = SceneEntityCfg("robot", joint_names=JOINTS, preserve_order=True)
 
 
 # Frozen v0.4 map, reachability version t2-reachability-3 (A1 passed, protocol §12):
@@ -42,22 +39,9 @@ class CommandsCfg:
 @configclass
 class ObservationsCfg:
     @configclass
-    class PolicyCfg(ObservationGroupCfg):
-        # §6 order; frame B, positions + quaternions wxyz (T1 encoding, decided in step 3).
-        joint_pos = ObservationTermCfg(func=mdp.joint_pos_rel, params={"asset_cfg": _JOINTS})
-        joint_vel = ObservationTermCfg(func=mdp.joint_vel, params={"asset_cfg": _JOINTS})
-        base_ang_vel = ObservationTermCfg(func=mdp.base_ang_vel)
-        projected_gravity = ObservationTermCfg(func=mdp.projected_gravity)
-        previous_action = ObservationTermCfg(func=mdp.last_action)
-        base_velocity_goal = ObservationTermCfg(func=zero_velocity_goal)
-        tcp_goal_body = ObservationTermCfg(func=mdp.generated_commands, params={"command_name": COMMAND})
-        tcp_pose_body = ObservationTermCfg(func=tcp_pose_body)
-        tcp_pose_error_body = ObservationTermCfg(func=tcp_pose_error_body)
+    class PolicyCfg(SuitePolicyCfg):
+        # §6 order; frame B, positions + quaternions wxyz. Shared 95-dim suite group (standing_ee.observations).
         target_height_band = None   # flag obs_target_height_band: ObservationTermCfg(func=runtime.band_one_hot)
-
-        def __post_init__(self):
-            self.concatenate_terms = True
-            self.enable_corruption = False
 
     policy = PolicyCfg()
 

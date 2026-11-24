@@ -8,7 +8,8 @@ import numpy as np
 
 from .geometry import circle, transform
 
-VERSION = "2.0.0"   # 2.0.0 (2026-11-23): TCP end-effector frame, shared termination set, wheel channel (T3 D19, D20, D22, D33)
+VERSION = "2.1.0"   # 2.1.0 (2026-11-24): shared 95-dim suite observation (T3 D40, D43); else unchanged
+# 2.0.0 (2026-11-23): TCP end-effector frame, shared termination set, wheel channel (T3 D19, D20, D22, D33)
 # 1.0.0 (2026-11-12): draft.7 + oracle controller, fast shutdown, metrics_export completeness
 TASK_ID = "RobotLab-Isaac-T1-Standing-Unitree-B2W-Z1-v0"
 # End-effector frame (2.0.0, T3 D19/D33): the TCP, a rigid translation of the link06 flange. Targets, references,
